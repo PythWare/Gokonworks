@@ -2,6 +2,8 @@
 
 Gokonworks is an upcoming modding toolkit for Akiba's Trip Undead & Undressed. The design of Gokonworks is inspired by my favorite anime, How I Attended An All-Guy's Mixer.
 
+Gokonworks includes a rad Mod Manager unlike any other visually, the first of its type for Mod Manager for mods are visualized as wine bottles that are filled when enabled or empty when disabled.
+
 # How Gokonworks actaully works
 
 Gokonworks will unpack Akiba's volume.dat archive file completely, creating a taildata json file for storing metadata for proper and safe mod applying/disabling.
