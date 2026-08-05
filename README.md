@@ -30,6 +30,10 @@ For modders that wish to mod the game, you must run the unpack. Whenever you mod
 
 For gamers who don't want to mod but instead download/apply mods, you don't need to unpack the game. Just place the downloaded .at mods in the Mods folder which is created when you open the Mod Manager within Gokonworks
 
+To apply mods, select the bottle of the mod you want applied and click the Pour button. The log will update but also the Status of the mod will say Poured.
+
+To disable mods, select a bottle that is filled and click the Empty button or Empty Every Bottle button. The difference is Empty reverts the TOC but leaves the appended data, Emprty Every Bottle will revert the TOC and truncate the archive to the original vanilla size.
+
 # Hub Examples
 
 <img width="1114" height="752" alt="fill1" src="https://github.com/user-attachments/assets/b0754680-f127-463f-8fc2-b4bf8c93a55a" />
