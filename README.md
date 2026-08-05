@@ -60,3 +60,7 @@ Mod Creator example
 <img width="1281" height="752" alt="exa1" src="https://github.com/user-attachments/assets/7be186d1-64ff-4585-9beb-5247f1d08d69" />
 
 <img width="1283" height="751" alt="exa6" src="https://github.com/user-attachments/assets/fe83204a-9b75-4323-9823-50a732687404" />
+
+# PNG usage
+
+Gokonworks includes 2 PNG images in the pngs folder (bottle.png and glass.png), I don't own them. bottle.png and glass.png are free images that had a free distribution license that I downloaded to use with the GUI but their license forbids monetizing them. So if you use Gokonworks, you are now informed those assets are not permitted for financial gain.
