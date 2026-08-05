@@ -48,7 +48,8 @@ To disable mods, select a bottle that is filled and click the Empty button or Em
 
 <img width="1916" height="1036" alt="exa5" src="https://github.com/user-attachments/assets/97841974-b059-4b1c-8c48-e8ee63c0a6ac" />
 
-<img width="1914" height="1034" alt="exa4" src="https://github.com/user-attachments/assets/ab0fb8a6-0da7-42d1-91f0-e07e3c936a3b" />
+<img width="1239" height="836" alt="exa7" src="https://github.com/user-attachments/assets/e7e01b48-23b6-4582-ac64-4c8fdaaf3dc6" />
+
 # 
 Mod Creator example
 
