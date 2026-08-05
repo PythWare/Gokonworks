@@ -22,6 +22,8 @@ Gokonworks appends mods to the end of volume.dat and batch updates TOCs as neede
 
 The theme of Gokonworks is as explained above, inspired by my favorite anime but also the concept of Gokon. Mods are visualized as wine bottles on a shelf in the Mod Manager, when disabled they're empty but if enabled the bottle is filled like a wine bottle would be. Also, bottles of mods have the mod's name on the label of the wine bottle.
 
+As more mods are detected, the shelf will expand to allow more room for the growing wine (mod) collection. Use the mousewheel to scroll down as needed if the mod count gets much higher.
+
 When unpacking volume.dat, the Mocktail glass will gradually fill as a visual indicator of the progress
 
 # Modding Workflow
