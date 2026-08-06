@@ -1,0 +1,454 @@
+Akiba's Trip: Undead & Undressed Therion Script Function Reference
+
+This guide was written by PythWare on 8/6/2026, so as of that date this is all the public info on Therion and usage. This guide may be updated later on.
+
+How to run Therion:
+
+therion.exe is the script compiler Acquire shipped inside volume.dat.
+ Example directory where Therion is:  Unpacked_Files\lang_us\script\therion.exe
+
+It turns a .sol source file into a .sx file. .sol is the script you write while .sx is the compiled version the game uses. Copy therion.exe somewhere convenient and run
+
+Example commands:
+
+   Compile 1 Script
+     therion.exe -c MyScene.sol -o MyScene.sx
+
+   Compile with #include files
+     therion.exe -c MyScene.sol -o MyScene.sx -P C:\akiba\myincludes\
+
+   Full paths if the files are elsewhere
+     therion.exe -c C:\work\scene.sol -o C:\work\scene.sx -P C:\work\inc\
+
+   A quicky test
+     therion.exe
+     print("hello");        <- type a statement, press Enter
+     print(1+1);            <- prints 2
+                            <- blank line quits
+
+Options:
+
+   -c <file>   the source file to compile          (required)
+   -o <file>   where to write the compiled result  (required)
+   -P <path>   folder holding your #include files  (optional)
+   -p          does nothing. It's parsed and then never used, ignore it.
+
+Exit Codes:
+   0  success       1  bad arguments or input file missing
+   2  compile error 3  could not write the output file
+
+Read this before writing anything:
+
+Save your .sol and .h files as UTF-16 LE with a BOM.
+In Notepad: Save As -> Encoding: Unicode. In VS Code: UTF-16 LE.
+A UTF-8 file will fail with a useless error.
+
+Error mesages are nearly useless. A syntax error prints error[] line:1 with an empty message and the line number is often wrong. Compile often and change one thing at a time.
+
+The language looks like JavaScript. Functions are values:
+       Scene_010 = def
+       {
+           Common_SceneChangeStartOut();
+           StartMainMission();
+           Wait(30);
+       };
+It has var, if, while, for, switch, return, objects, new, lists, #define, #include, and background threads via StartThread.
+
+Putting a script in the game: 
+
+compile to .sx, place it in a folder mirroring the game layout (like lang_us\script\event\), then bottle it with the Gokonworks Mod Creator and pour it from the shelf.
+
+Engien Functions:
+
+209 names that the shipped scripts call but never define, which means the engine provides them. Grouped below by what their names suggest. This is a reading aid, not engine structure.
+
+Minigames (14):
+
+   PrismInit                   PrismSetStageID             PrismStart
+   PrismUIDestroy              RhythmGameInit              RhythmGameSetStageID
+   RhythmGamseStart            Scene_Mix                   StartMixUI
+   WidActionInit               WidActionSetStageID         WidActionStart
+   WidActionUIDestroy          WorkingMaid
+
+Battle (19):
+
+   AddBattleChara              DrawWeapon                  GetPlayerDead
+   IsBattleEnd                 Scene_GoLastBattle          SetBattleEndAllDead
+   SetBattleEndBattleMode      SetBattleEndCharaDead       SetBattleEndGuard
+   SetBattleEndGuardClash      SetBattleEndLifeAvr         SetBattleEndNude
+   SetBattleEndTime            SetDamageStop               SetDrawWeaponFlag
+   SetDropWeaponFlag           SetLife                     SheatheWeapon
+   WaitDrawSheatheWeapon
+
+Camera (6):
+
+   SetCamFOV                   SetCamFOVDefault            SetCamMove
+   SetCamPos                   SetSoloCamera               SetSoloCameraMove
+
+Dialogue and talk events (11):
+
+   AddMail                     FirstSerif                  PlayTalkEvent
+   Scene_TalkAbout             Scene_TalkBad               Scene_TalkLike
+   SetSerif                    ShopBalloonIn               ShopBalloonOut
+   StartDialogUI               StartMailUI
+
+Scene flow, missions and threads (38):
+
+   EndMainMission              GetPhase                    IsExecSubMission
+   PauseTask                   Require                     ResumeTask
+   SceneChangeStart            SceneChangeStartOut         SceneNo
+   SceneYes                    Scene_AboutMaidreamin       Scene_AboutPinafore
+   Scene_ActionFoodMenu        Scene_CancelFoodMenu        Scene_ChangeNone
+   Scene_FoodMenu              Scene_Heroine               Scene_JA_NormalEnd_010
+   Scene_JB_TrueEnd_010        Scene_JB_TrueEnd_020        Scene_Live001
+   Scene_MR_PointChk           Scene_PF_PointChk           Scene_PR_NormalEnd_010
+   Scene_PR_TrueEnd_010        Scene_PR_TrueEnd_020        Scene_YB_NormalEnd_010
+   Scene_YB_TrueEnd_010        Scene_YB_TrueEnd_020        SetMainMissionProgress
+   SetPhase                    StartMainMission            StartThread
+   TaskChangePause             Wait                        WaitLoadingAll
+   WaitMove                    WaitUI
+
+Characters and actors (28):
+
+   AddChara                    AddPotsuri                  ChangeHeroine
+   ChangeStopMotion            DelChara                    GetCharaFeeling
+   GetCharaIDFromMainCharaID   GetFullNude                 GetHeroineMainCharaID
+   GetSex                      PlayActionVoice             PlayMotion
+   PlayMotionSequence          SetAction                   SetCharaEffect
+   SetCharaFeeling             SetCharaPolyDistance        SetDrawChara
+   SetFace                     SetFullNude                 SetHalfNude
+   SetHeroineTension           SetLookAtChara              SetPlayMotionSE
+   SetPlayerJuzu               SetSkinColor                StopMotion
+   VolumeAllActionVoice
+
+Movement and position (10):
+
+   AutoMove                    GetPos                      ManualMove
+   Pos                         SetAlreadyMoveWorldMap      SetCollision
+   SetLookAtPos                SetPos                      SetTarget
+   SetUnMoveWorldMap
+
+Sound and voice(10):
+
+   PlayBGM                     PlayEventVoice              PlayMapBGM
+   PlaySE                      StartOutSoundTestUI         StartSoundTestUI
+   StopBGM                     StopSE                      VolumeAllSE
+   VolumeBGM
+
+Screen effects (10):
+
+   BlurStart                   DelMapEffect                ImageGame
+   SetBGColor                  SetFade                     SetMapEffect
+   SetMovieAfterWorldMap       SetPostEffectEnable         SetReserveMovie
+   SetVisible
+
+UI, shops and menus (9):
+
+   CreateMapEnterUI            GetExecShopID               SetShopEnv
+   SetShopID                   SetUnlockJunkShop           StartHelp
+   StartInfoPlate              StartOutShopUI              StartShopUI
+
+Map and world (13):
+   AddObject                   ChangeMap                   ChangeMapByAreaMapID
+   DelObject                   DelObjectAll                GetAreaMapID
+   SetExitMapOut               SetExitStatus               SetMapInCharLoadFlag
+   SetUnlockWorldMap           StartBG                     StartLeaveAkiba
+   StartOutBG
+
+Player state and progression (13):
+
+   AddItem                     Common_ParamSet             GetAddItemEnable
+   GetDifficult                GetDlcLicense               GetLanguageUniqueID
+   GetMoney                    GetViewerMode               Rand
+   SetMoney                    UnlockCollection            UnlockSystem
+   _RandNum3
+
+Everything else (28):
+
+   Call_Stop                   GetEventVar                 GetGameClearCount
+   Ques01                      Ques02                      Ques03
+   Ques04                      Ques05                      Ques06
+   Ques07                      Ques08                      Ques09
+   Ques10                      Ques11                      Ques12
+   Ques13                      Ques14                      Ques15
+   Ques16                      Scene2nd                    Scene3rd
+   Set                         SetEventVar                 Stop
+   ToString                    TurnDirection               _SisEffWill
+   print
+
+How functions are called, partly solved:
+
+The functions above aren't all global. Many are methods on engine objects, so the real call looks like this:
+
+       Character.PauseTask();
+       Mission.StartMainMission();
+       TalkEvent.PlayTalkEvent(TALKEVENT_MM_000_000);
+
+These engine objects appear in the shipped scripts, with the number of scripts each shows up in:
+
+       Character      153 scripts
+       Mission        153 scripts
+       Param          152 scripts
+       Sound          152 scripts
+       Camera         152 scripts
+       Effect         152 scripts
+       TalkEvent      152 scripts
+       UI             152 scripts
+       Locator        152 scripts
+       Map            63 scripts
+       Battle         62 scripts
+       Object         24 scripts
+
+ Which function belongs to which object isn't yet solved. We can read the names out of the bytecode but not yet the ownership. To find out how a specific function is called, look at a script that uses it.
+
+Names the scripts define:
+
+These arent engine functions. The game's own scripts define them, so you can redefine them and youre expected to write the Scene_ ones yourself. The engine calls Scene_Init first and Scene_End last.
+
+   Common_BlurOFF              Common_BlurON               Common_GetAddCharaID
+   Common_SceneChangeStart     Common_SceneChangeStartOut  Common_TalkEvent
+   Scene_000                   Scene_010                   Scene_Battle000
+   Scene_Battle001             Scene_Battle002             Scene_Battle003
+   Scene_Battle010             Scene_ByeBye                Scene_Debug
+   Scene_End                   Scene_Init                  Scene_JA_TrueEnd_010
+   Scene_JA_TrueEnd_020        Scene_Judge                 Scene_Talk
+   Scene_WishTalk              _SetSerif                   _SisterBrain
+   _SisterBrainXM              _SisterBrainXP              _SisterBrainYM
+   _SisterBrainYP
+
+ The Common_ helpers live in a shared script pulled in at runtime with:
+       Require("event/common");
+
+Which scripts use which function:
+
+The number is how many of the 153 scripts reference it. Each script ships once per language, so the paths below are the lang_us copies. A high number means its safe and common. A low number means it's specialised and those 
+few scripts are the best working example.
+
+    153  EndMainMission                     e.g. lang_us\script\event\2d_event_test.sx
+    153  PauseTask                          e.g. lang_us\script\event\2d_event_test.sx
+    153  ResumeTask                         e.g. lang_us\script\event\2d_event_test.sx
+    153  StartMainMission                   e.g. lang_us\script\event\2d_event_test.sx
+    153  Wait                               e.g. lang_us\script\event\2d_event_test.sx
+    153  print                              e.g. lang_us\script\event\2d_event_test.sx
+    152  AddChara                           e.g. lang_us\script\event\2d_event_test.sx
+    152  AddMail                            e.g. lang_us\script\event\2d_event_test.sx
+    152  AddPotsuri                         e.g. lang_us\script\event\2d_event_test.sx
+    152  BlurStart                          e.g. lang_us\script\event\2d_event_test.sx
+    152  Common_ParamSet                    e.g. lang_us\script\event\2d_event_test.sx
+    152  DelChara                           e.g. lang_us\script\event\2d_event_test.sx
+    152  GetCharaFeeling                    e.g. lang_us\script\event\2d_event_test.sx
+    152  GetCharaIDFromMainCharaID          e.g. lang_us\script\event\2d_event_test.sx
+    152  GetEventVar                        e.g. lang_us\script\event\2d_event_test.sx
+    152  GetGameClearCount                  e.g. lang_us\script\event\2d_event_test.sx
+    152  GetPhase                           e.g. lang_us\script\event\2d_event_test.sx
+    152  GetPos                             e.g. lang_us\script\event\2d_event_test.sx
+    152  PlayMotion                         e.g. lang_us\script\event\2d_event_test.sx
+    152  PlaySE                             e.g. lang_us\script\event\2d_event_test.sx
+    152  PlayTalkEvent                      e.g. lang_us\script\event\2d_event_test.sx
+    152  Pos                                e.g. lang_us\script\event\2d_event_test.sx
+    152  SceneChangeStart                   e.g. lang_us\script\event\2d_event_test.sx
+    152  SceneChangeStartOut                e.g. lang_us\script\event\2d_event_test.sx
+    152  SetAction                          e.g. lang_us\script\event\2d_event_test.sx
+    152  SetCamFOVDefault                   e.g. lang_us\script\event\2d_event_test.sx
+    152  SetCamPos                          e.g. lang_us\script\event\2d_event_test.sx
+    152  SetCharaEffect                     e.g. lang_us\script\event\2d_event_test.sx
+    152  SetDrawChara                       e.g. lang_us\script\event\2d_event_test.sx
+    152  SetFade                            e.g. lang_us\script\event\2d_event_test.sx
+    152  SetLookAtChara                     e.g. lang_us\script\event\2d_event_test.sx
+    152  SetLookAtPos                       e.g. lang_us\script\event\2d_event_test.sx
+    152  SetPlayMotionSE                    e.g. lang_us\script\event\2d_event_test.sx
+    152  TurnDirection                      e.g. lang_us\script\event\2d_event_test.sx
+    152  UnlockCollection                   e.g. lang_us\script\event\2d_event_test.sx
+    152  WaitMove                           e.g. lang_us\script\event\2d_event_test.sx
+    152  WaitUI                             e.g. lang_us\script\event\2d_event_test.sx
+    142  SetPos                             e.g. lang_us\script\event\mm_c1_0000.sx
+    137  WaitLoadingAll                     e.g. lang_us\script\event\mm_c1_0000.sx
+    130  ChangeHeroine                      e.g. lang_us\script\event\mm_c1_0000.sx
+    129  SetPhase                           e.g. lang_us\script\event\mm_c1_0000.sx
+    128  SetExitStatus                      e.g. lang_us\script\event\2d_event_test.sx
+     77  PlayBGM                            e.g. lang_us\script\event\mm_c1_0000.sx
+     75  GetViewerMode                      e.g. lang_us\script\event\mm_c1_0050.sx
+     69  SetEventVar                        e.g. lang_us\script\event\mm_c1_0000.sx
+     65  SetCamFOV                          e.g. lang_us\script\event\mm_c1_0000.sx
+     63  SetCamMove                         e.g. lang_us\script\event\mm_c1_0010.sx
+     62  AddBattleChara                     e.g. lang_us\script\event\mm_c1_0000.sx
+     62  IsBattleEnd                        e.g. lang_us\script\event\mm_c1_0000.sx
+     60  SetBattleEndTime                   e.g. lang_us\script\event\mm_c1_0000.sx
+     60  SheatheWeapon                      e.g. lang_us\script\event\mm_c1_0010.sx
+     57  ManualMove                         e.g. lang_us\script\event\mm_c1_0010.sx
+     54  ChangeMap                          e.g. lang_us\script\event\mm_c1_0000.sx
+     50  PlayMapBGM                         e.g. lang_us\script\event\mm_c1_0000.sx
+     48  SetMainMissionProgress             e.g. lang_us\script\event\mm_c1_0050.sx
+     47  SetBattleEndAllDead                e.g. lang_us\script\event\mm_c1_0010.sx
+     42  SetFace                            e.g. lang_us\script\event\mm_c1_0010.sx
+     40  SetUnlockWorldMap                  e.g. lang_us\script\event\mm_c1_0000.sx
+     37  PlayMotionSequence                 e.g. lang_us\script\event\mm_c1_0010.sx
+     34  DrawWeapon                         e.g. lang_us\script\event\mm_c1_0000.sx
+     31  SetTarget                          e.g. lang_us\script\event\mm_c1_0000.sx
+     27  StopMotion                         e.g. lang_us\script\event\mm_c1_0000.sx
+     26  StartThread                        e.g. lang_us\script\event\mm_c1_0010.sx
+     25  SetLife                            e.g. lang_us\script\event\mm_c1_0050.sx
+     25  StartDialogUI                      e.g. lang_us\script\event\mm_c1_0000.sx
+     24  PlayEventVoice                     e.g. lang_us\script\event\mm_c1_0010.sx
+     22  SetCollision                       e.g. lang_us\script\event\mm_c1_0000.sx
+     21  PlayActionVoice                    e.g. lang_us\script\event\mm_c1_0200.sx
+     20  SetBattleEndCharaDead              e.g. lang_us\script\event\mm_c1_0050.sx
+     14  SetUnMoveWorldMap                  e.g. lang_us\script\event\mm_c1_0010.sx
+     14  StartHelp                          e.g. lang_us\script\event\mm_c1_0000.sx
+     13  SetCharaPolyDistance               e.g. lang_us\script\event\mm_c1_0050.sx
+     12  SetDrawWeaponFlag                  e.g. lang_us\script\event\mm_c2_0420.sx
+     12  StopSE                             e.g. lang_us\script\event\mm_c2_0420.sx
+     11  ChangeMapByAreaMapID               e.g. lang_us\script\event\mm_c1_0050.sx
+     11  Require                            e.g. lang_us\script\event\_test.sx
+     11  SetBattleEndLifeAvr                e.g. lang_us\script\event\mm_c1_0010.sx
+     11  SetDamageStop                      e.g. lang_us\script\event\mm_c1_0000.sx
+     11  StartBG                            e.g. lang_us\script\event\mm_c1_0000.sx
+     11  StartOutBG                         e.g. lang_us\script\event\mm_c1_0000.sx
+     10  SetDropWeaponFlag                  e.g. lang_us\script\event\mm_c1_0200.sx
+     10  SetSoloCamera                      e.g. lang_us\script\event\mm_c1_0000.sx
+     10  WaitDrawSheatheWeapon              e.g. lang_us\script\event\mm_c1_0200.sx
+      9  AutoMove                           e.g. lang_us\script\event\mm_c1_0000.sx
+      9  ChangeStopMotion                   e.g. lang_us\script\event\mm_c1_0070_0113.sx
+      9  SetSerif                           e.g. lang_us\script\event\mm_c1_0060.sx
+      8  CreateMapEnterUI                   e.g. lang_us\script\event\mm_c1_0010.sx
+      8  SetSkinColor                       e.g. lang_us\script\event\mm_c2_0420.sx
+      8  StopBGM                            e.g. lang_us\script\event\mm_c1_0010.sx
+      7  Set                                e.g. lang_us\script\event\mm_c1_0080.sx
+      6  AddObject                          e.g. lang_us\script\event\mm_c1_0010.sx
+      6  GetMoney                           e.g. lang_us\script\event\se_jinja.sx
+      6  SetCharaFeeling                    e.g. lang_us\script\event\mm_ja_0530.sx
+      6  SetExitMapOut                      e.g. lang_us\script\event\mm_c1_0000.sx
+      6  SetMoney                           e.g. lang_us\script\event\se_jinja.sx
+      6  SetSoloCameraMove                  e.g. lang_us\script\event\mm_c1_0050.sx
+      6  StartInfoPlate                     e.g. lang_us\script\event\mm_c2_0340.sx
+      6  ToString                           e.g. lang_us\script\event\mm_c1_0050.sx
+      5  SetFullNude                        e.g. lang_us\script\event\mm_c2_0420.sx
+      5  SetShopEnv                         e.g. lang_us\script\event\se_music_appreciation.sx
+      5  Stop                               e.g. lang_us\script\event\mm_c1_0240.sx
+      4  AddItem                            e.g. lang_us\script\event\se_prism.sx
+      4  DelObjectAll                       e.g. lang_us\script\event\mm_c1_0130.sx
+      4  GetDifficult                       e.g. lang_us\script\event\mm_c1_0220_331.sx
+      4  Rand                               e.g. lang_us\script\event\se_jinja.sx
+      4  Scene_Live001                      e.g. lang_us\script\event\mm_c1_0130.sx
+      4  Scene_YB_NormalEnd_010             e.g. lang_us\script\event\mm_jb_0780.sx
+      4  Scene_YB_TrueEnd_010               e.g. lang_us\script\event\mm_jb_0780.sx
+      4  Scene_YB_TrueEnd_020               e.g. lang_us\script\event\mm_jb_0780.sx
+      4  SetBattleEndNude                   e.g. lang_us\script\event\mm_c1_0200.sx
+      4  SetHeroineTension                  e.g. lang_us\script\event\mm_c1_0220_331.sx
+      4  StartOutShopUI                     e.g. lang_us\script\event\shop_common.sx
+      4  StartShopUI                        e.g. lang_us\script\event\shop_common.sx
+      3  GetFullNude                        e.g. lang_us\script\event\mm_c2_0420.sx
+      3  SetMapEffect                       e.g. lang_us\script\event\mm_jb_0690.sx
+      3  SetMapInCharLoadFlag               e.g. lang_us\script\event\se_prism.sx
+      3  SetPostEffectEnable                e.g. lang_us\script\event\se_jinja.sx
+      3  StartMailUI                        e.g. lang_us\script\event\mm_c1_0000.sx
+      2  DelMapEffect                       e.g. lang_us\script\event\mm_pr_0560.sx
+      2  DelObject                          e.g. lang_us\script\event\mm_c1_0010.sx
+      2  GetAddItemEnable                   e.g. lang_us\script\event\se_prism.sx
+      2  SceneNo                            e.g. lang_us\script\event\se_prison.sx
+      2  SceneYes                           e.g. lang_us\script\event\se_prison.sx
+      2  Scene_Mix                          e.g. lang_us\script\event\mm_c1_0100_S_010.sx
+      2  SetAlreadyMoveWorldMap             e.g. lang_us\script\event\mm_c1_0010.sx
+      2  SetBGColor                         e.g. lang_us\script\event\se_prison.sx
+      2  SetHalfNude                        e.g. lang_us\script\event\mm_c1_0260.sx
+      2  SetMovieAfterWorldMap              e.g. lang_us\script\event\mm_c1_0000_movie.sx
+      2  SetPlayerJuzu                      e.g. lang_us\script\event\mm_pr_0460.sx
+      2  SetReserveMovie                    e.g. lang_us\script\event\mm_c1_0000_movie.sx
+      2  SetShopID                          e.g. lang_us\script\event\shop_eulien.sx
+      2  SetUnlockJunkShop                  e.g. lang_us\script\event\se_prism.sx
+      2  StartMixUI                         e.g. lang_us\script\event\mm_c1_0100_S_010.sx
+      2  TaskChangePause                    e.g. lang_us\script\event\mm_c1_0100_S_010.sx
+      2  UnlockSystem                       e.g. lang_us\script\event\mm_c1_0100.sx
+      1  Call_Stop                          e.g. lang_us\script\event\shop_eulien.sx
+      1  FirstSerif                         e.g. lang_us\script\event\se_sister.sx
+      1  GetAreaMapID                       e.g. lang_us\script\event\shop_maid.sx
+      1  GetDlcLicense                      e.g. lang_us\script\event\mm_c2_0420.sx
+      1  GetExecShopID                      e.g. lang_us\script\event\shop_common.sx
+      1  GetHeroineMainCharaID              e.g. lang_us\script\event\se_sister.sx
+      1  GetLanguageUniqueID                e.g. lang_us\script\event\se_sister.sx
+      1  GetPlayerDead                      e.g. lang_us\script\event\mm_jb_0720.sx
+      1  GetSex                             e.g. lang_us\script\event\se_sister.sx
+      1  ImageGame                          e.g. lang_us\script\event\shop_maid.sx
+      1  IsExecSubMission                   e.g. lang_us\script\event\se_sister.sx
+      1  PrismInit                          e.g. lang_us\script\event\se_prism.sx
+      1  PrismSetStageID                    e.g. lang_us\script\event\se_prism.sx
+      1  PrismStart                         e.g. lang_us\script\event\se_prism.sx
+      1  PrismUIDestroy                     e.g. lang_us\script\event\se_prism.sx
+      1  Ques01                             e.g. lang_us\script\event\shop_eulien.sx
+      1  Ques02                             e.g. lang_us\script\event\shop_eulien.sx
+      1  Ques03                             e.g. lang_us\script\event\shop_eulien.sx
+      1  Ques04                             e.g. lang_us\script\event\shop_eulien.sx
+      1  Ques05                             e.g. lang_us\script\event\shop_eulien.sx
+      1  Ques06                             e.g. lang_us\script\event\shop_eulien.sx
+      1  Ques07                             e.g. lang_us\script\event\shop_eulien.sx
+      1  Ques08                             e.g. lang_us\script\event\shop_eulien.sx
+      1  Ques09                             e.g. lang_us\script\event\shop_eulien.sx
+      1  Ques10                             e.g. lang_us\script\event\shop_eulien.sx
+      1  Ques11                             e.g. lang_us\script\event\shop_eulien.sx
+      1  Ques12                             e.g. lang_us\script\event\shop_eulien.sx
+      1  Ques13                             e.g. lang_us\script\event\shop_eulien.sx
+      1  Ques14                             e.g. lang_us\script\event\shop_eulien.sx
+      1  Ques15                             e.g. lang_us\script\event\shop_eulien.sx
+      1  Ques16                             e.g. lang_us\script\event\shop_eulien.sx
+      1  RhythmGameInit                     e.g. lang_us\script\event\se_rhythm_game.sx
+      1  RhythmGameSetStageID               e.g. lang_us\script\event\se_rhythm_game.sx
+      1  RhythmGamseStart                   e.g. lang_us\script\event\se_rhythm_game.sx
+      1  Scene2nd                           e.g. lang_us\script\event\se_prison.sx
+      1  Scene3rd                           e.g. lang_us\script\event\se_prison.sx
+      1  Scene_AboutMaidreamin              e.g. lang_us\script\event\shop_maid.sx
+      1  Scene_AboutPinafore                e.g. lang_us\script\event\shop_maid.sx
+      1  Scene_ActionFoodMenu               e.g. lang_us\script\event\shop_maid.sx
+      1  Scene_CancelFoodMenu               e.g. lang_us\script\event\shop_maid.sx
+      1  Scene_ChangeNone                   e.g. lang_us\script\event\se_sister.sx
+      1  Scene_FoodMenu                     e.g. lang_us\script\event\shop_maid.sx
+      1  Scene_GoLastBattle                 e.g. lang_us\script\event\se_sister.sx
+      1  Scene_Heroine                      e.g. lang_us\script\event\se_sister.sx
+      1  Scene_JA_NormalEnd_010             e.g. lang_us\script\event\mm_ja_0530.sx
+      1  Scene_JB_TrueEnd_010               e.g. lang_us\script\event\mm_jb_0760.sx
+      1  Scene_JB_TrueEnd_020               e.g. lang_us\script\event\mm_jb_0760.sx
+      1  Scene_MR_PointChk                  e.g. lang_us\script\event\shop_maid.sx
+      1  Scene_PF_PointChk                  e.g. lang_us\script\event\shop_maid.sx
+      1  Scene_PR_NormalEnd_010             e.g. lang_us\script\event\mm_pr_0560.sx
+      1  Scene_PR_TrueEnd_010               e.g. lang_us\script\event\mm_pr_0560.sx
+      1  Scene_PR_TrueEnd_020               e.g. lang_us\script\event\mm_pr_0560.sx
+      1  Scene_TalkAbout                    e.g. lang_us\script\event\se_sister.sx
+      1  Scene_TalkBad                      e.g. lang_us\script\event\se_sister.sx
+      1  Scene_TalkLike                     e.g. lang_us\script\event\se_sister.sx
+      1  SetBattleEndBattleMode             e.g. lang_us\script\event\mm_c1_0010.sx
+      1  SetBattleEndGuard                  e.g. lang_us\script\event\mm_c1_0010.sx
+      1  SetBattleEndGuardClash             e.g. lang_us\script\event\mm_c1_0010.sx
+      1  SetVisible                         e.g. lang_us\script\event\se_sister.sx
+      1  ShopBalloonIn                      e.g. lang_us\script\event\shop_common.sx
+      1  ShopBalloonOut                     e.g. lang_us\script\event\shop_eulien.sx
+      1  StartLeaveAkiba                    e.g. lang_us\script\event\shop_exit_akiba.sx
+      1  StartOutSoundTestUI                e.g. lang_us\script\event\se_music_appreciation.sx
+      1  StartSoundTestUI                   e.g. lang_us\script\event\se_music_appreciation.sx
+      1  VolumeAllActionVoice               e.g. lang_us\script\event\mm_jb_0720.sx
+      1  VolumeAllSE                        e.g. lang_us\script\event\mm_jb_0720.sx
+      1  VolumeBGM                          e.g. lang_us\script\event\mm_jb_0720.sx
+      1  WidActionInit                      e.g. lang_us\script\event\se_wid_strip_action.sx
+      1  WidActionSetStageID                e.g. lang_us\script\event\se_wid_strip_action.sx
+      1  WidActionStart                     e.g. lang_us\script\event\se_wid_strip_action.sx
+      1  WidActionUIDestroy                 e.g. lang_us\script\event\se_wid_strip_action.sx
+      1  WorkingMaid                        e.g. lang_us\script\event\shop_maid.sx
+      1  _RandNum3                          e.g. lang_us\script\event\shop_maid.sx
+      1  _SisEffWill                        e.g. lang_us\script\event\se_sister.sx
+
+Operators:
+
+These appear in the bytecode but they're what the compiler turns your symbols into. Write the symbol not the name.
+
+       Add  Sub  Mul  Inv        +  -  *  negate
+       lt  le  gt  ge  eq  ne    <  <=  >  >=  ==  !=
+       And  Or                   &&  ||
+       at                        list[index]
+
+What's still unknown:
+
+Which engine object owns which function, see section 4.
+ 
+What arguments each function takes and in what order. Copy the call from a shipped script that already does what you want.
+
+The full opcode set, so there is no decompiler yet. Names and text can be read back out of a .sx but comments and formatting are gone for good and control flow has to be reconstructed by hand.
+
+Constant names such as TALKEVENT_MM_000_000 are readable but the full list of valid values isn't known.

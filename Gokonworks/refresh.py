@@ -158,6 +158,52 @@ def pick_theme(previous_key: str = "") -> Theme:
         return THEMES_BY_KEY[previous_key]
     return random.choice(others)
 
+def cut_to_fit(font: tkfont.Font, text: str, max_width: int) -> int:
+    """
+    Length of the longest prefix of text that still fits
+    """
+    low, high = 1, min(len(text), max(1, max_width))
+    while low < high:
+        middle = (low + high + 1) // 2
+        if font.measure(text[:middle]) <= max_width:
+            low = middle
+        else:
+            high = middle - 1
+    return low
+
+
+def wrap_one(font: tkfont.Font, text: str, max_width: int, start: int = 0) -> tuple[str, int]:
+    """
+    Wrap one line
+    """
+    length = len(text)
+    index = start
+    while index < length and text[index] == " ":
+        index += 1
+    if index >= length:
+        return "", length
+
+    begin = index
+    ceiling = begin + max(1, max_width)
+    last_fit = -1
+    cursor = index
+    while cursor < length and cursor <= ceiling:
+        word_end = cursor
+        while word_end < length and text[word_end] != " " and word_end <= ceiling:
+            word_end += 1
+        if font.measure(text[begin:word_end]) > max_width:
+            break
+        last_fit = word_end
+        while word_end < length and text[word_end] == " ":
+            word_end += 1
+        cursor = word_end
+
+    if last_fit < 0:
+        cut = cut_to_fit(font, text[begin:ceiling], max_width)
+        return text[begin:begin + cut], begin + cut
+    return text[begin:last_fit], last_fit
+
+
 def fit_line(font: tkfont.Font, text: str, max_width: int) -> str:
     """Single line, ellipsised in the middle of a word rather than overflowing"""
     if max_width <= 0 or font.measure(text) <= max_width:
@@ -166,9 +212,9 @@ def fit_line(font: tkfont.Font, text: str, max_width: int) -> str:
     budget = max_width - font.measure(ellipsis)
     if budget <= 0:
         return ellipsis
-    cut = len(text)
-    while cut > 0 and font.measure(text[:cut]) > budget:
-        cut -= 1
+    cut = cut_to_fit(font, text, budget)
+    if font.measure(text[:cut]) > budget:
+        cut = 0
     return text[:cut].rstrip() + ellipsis
 
 
@@ -178,24 +224,16 @@ def wrap_lines(font: tkfont.Font, text: str, max_width: int, max_lines: int = 0)
     """
     lines: list[str] = []
     for paragraph in text.splitlines() or [""]:
-        current = ""
-        for word in paragraph.split():
-            candidate = f"{current} {word}".strip()
-            if current and font.measure(candidate) > max_width:
-                lines.append(current)
-                current = word
-                while font.measure(current) > max_width and len(current) > 1:
-                    cut = len(current)
-                    while cut > 1 and font.measure(current[:cut]) > max_width:
-                        cut -= 1
-                    lines.append(current[:cut])
-                    current = current[cut:]
-            else:
-                current = candidate
-        lines.append(current)
-    if max_lines and len(lines) > max_lines:
-        lines = lines[:max_lines]
-        lines[-1] = fit_line(font, lines[-1] + "...", max_width)
+        cursor = 0
+        if not paragraph:
+            lines.append("")
+        while cursor < len(paragraph):
+            line, cursor = wrap_one(font, paragraph, max_width, cursor)
+            lines.append(line)
+            if max_lines and len(lines) >= max_lines:
+                if cursor < len(paragraph):
+                    lines[-1] = fit_line(font, line + "...", max_width)
+                return lines[:max_lines]
     return lines
 
 def require_pil():
@@ -297,7 +335,7 @@ class Button(CanvasWidget):
             canvas.tag_bind(item, "<ButtonRelease-1>", self.click)
 
     def edge(self) -> str:
-        """Resting outline, which is what gives each tone its identity."""
+        """Resting outline, gives each tone its identity"""
         if self.tone == "danger":
             return self.theme.danger
         if self.tone == "accent":
@@ -362,7 +400,6 @@ class Button(CanvasWidget):
             width=max(10, width - 18),
         )
 
-
 class ProgressBar(CanvasWidget):
     """Thin two tone bar"""
 
@@ -403,14 +440,22 @@ class StatusLog(CanvasWidget):
     """
 
     MAX_LINES = 400
+    BAR_WIDTH = 4
+    CHUNK = 60
 
-    def __init__(self, canvas, theme, x, y, width, height):
+    def __init__(self, canvas, theme, x, y, width, height,
+                 font=("Consolas", 9), follow_tail=True):
         super().__init__(canvas, theme)
         self.x, self.y, self.width, self.height = x, y, width, height
-        self.font = tkfont.Font(family="Consolas", size=9)
+        self.font = tkfont.Font(family=font[0], size=font[1])
         self.line_height = self.font.metrics("linespace") + 2
+        self.follow_tail = follow_tail
         self.messages: list[tuple[str, str]] = []
         self.lines: list[tuple[str, str]] = []
+        self.paragraphs: list[str] = []
+        self.paragraph_index = 0
+        self.char_index = 0
+        self.block_colour = theme.text
         self.offset = 0
 
         self.background = self.track(
@@ -418,6 +463,9 @@ class StatusLog(CanvasWidget):
         )
         self.line_items: list[int] = []
         self.rebuild_pool()
+        self.bar_item = self.track(
+            canvas.create_rectangle(0, 0, 0, 0, fill=theme.panel_soft, outline="")
+        )
         canvas.bind("<MouseWheel>", self.wheel, add="+")
 
     def visible_count(self) -> int:
@@ -435,15 +483,56 @@ class StatusLog(CanvasWidget):
             )
             self.line_items.append(item)
 
-    def write(self, text: str, tone: str = "muted"):
-        colour = {
+    def tone_colour(self, tone: str) -> str:
+        return {
             "muted": self.theme.text_muted,
             "text": self.theme.text,
             "ok": self.theme.ok,
             "danger": self.theme.danger,
             "accent": self.theme.accent,
         }.get(tone, self.theme.text_muted)
+
+    def set_text(self, text: str, tone: str = "text"):
+        """
+        Replace everything with one block and go back to the top
+        """
+        colour = self.tone_colour(tone)
+        self.messages = [(text, colour)] if text else []
+        self.paragraphs = (text or "").splitlines() or ([""] if text else [])
+        self.paragraph_index = 0
+        self.char_index = 0
+        self.block_colour = colour
+        self.lines = []
+        self.offset = 0
+        self.ensure(len(self.line_items) + self.CHUNK)
+        self.refresh()
+
+    def clear(self):
+        self.set_text("")
+
+    def ensure(self, needed: int):
+        """
+        Wrap forward until there are needed lines or the text runs out
+        """
+        width = self.width - 20
+        while len(self.lines) < needed and self.paragraph_index < len(self.paragraphs):
+            paragraph = self.paragraphs[self.paragraph_index]
+            if self.char_index >= len(paragraph):
+                if self.char_index == 0 and not paragraph:
+                    self.lines.append(("", self.block_colour))
+                self.paragraph_index += 1
+                self.char_index = 0
+                continue
+            line, self.char_index = wrap_one(self.font, paragraph, width, self.char_index)
+            self.lines.append((line, self.block_colour))
+
+    def fully_wrapped(self) -> bool:
+        return self.paragraph_index >= len(self.paragraphs)
+
+    def write(self, text: str, tone: str = "muted"):
+        colour = self.tone_colour(tone)
         self.messages.append((text, colour))
+        self.paragraphs, self.paragraph_index, self.char_index = [], 0, 0
         if len(self.messages) > self.MAX_LINES:
             del self.messages[: len(self.messages) - self.MAX_LINES]
         for line in wrap_lines(self.font, text, self.width - 20):
@@ -453,8 +542,20 @@ class StatusLog(CanvasWidget):
         self.offset = max(0, len(self.lines) - self.visible_count())
         self.refresh()
 
+    def max_offset(self) -> int:
+        return max(0, len(self.lines) - len(self.line_items))
+
     def rewrap(self):
-        """Rebuild the wrapped lines from the original messages after a resize"""
+        """
+        Redo the wrapping after a resize changed the width
+        """
+        if self.paragraphs:
+            keep = self.offset
+            self.paragraph_index = 0
+            self.char_index = 0
+            self.lines = []
+            self.ensure(keep + len(self.line_items) + self.CHUNK)
+            return
         self.lines = [
             (line, colour)
             for text, colour in self.messages
@@ -464,6 +565,7 @@ class StatusLog(CanvasWidget):
             del self.lines[: len(self.lines) - self.MAX_LINES]
 
     def refresh(self):
+        self.offset = min(self.offset, self.max_offset())
         window = self.lines[self.offset : self.offset + len(self.line_items)]
         for index, item in enumerate(self.line_items):
             if index < len(window):
@@ -471,13 +573,36 @@ class StatusLog(CanvasWidget):
                 self.canvas.itemconfigure(item, text=text, fill=colour)
             else:
                 self.canvas.itemconfigure(item, text="")
+        self.refresh_bar()
+
+    def refresh_bar(self):
+        """A thumb on the right edge, shown only when there is more to see"""
+        visible = len(self.line_items)
+        total = len(self.lines)
+        if total <= visible:
+            self.canvas.coords(self.bar_item, 0, 0, 0, 0)
+            return
+        track_top = self.y + 4
+        track_height = self.height - 8
+        thumb = max(18, track_height * visible / total)
+        travel = track_height - thumb
+        position = track_top + travel * (self.offset / self.max_offset())
+        left = self.x + self.width - self.BAR_WIDTH - 3
+        self.canvas.coords(
+            self.bar_item, left, position, left + self.BAR_WIDTH, position + thumb
+        )
+        self.canvas.itemconfigure(self.bar_item, fill=self.theme.text_muted)
 
     def wheel(self, event):
         if not (self.x <= event.x <= self.x + self.width and self.y <= event.y <= self.y + self.height):
-            return
-        limit = max(0, len(self.lines) - len(self.line_items))
-        self.offset = min(limit, max(0, self.offset - (1 if event.delta > 0 else -1) * 3))
+            return "break"
+        target = max(0, self.offset - (1 if event.delta > 0 else -1) * 3)
+        self.ensure(target + len(self.line_items) + self.CHUNK)
+        if self.max_offset() == 0:
+            return "break"
+        self.offset = min(self.max_offset(), target)
         self.refresh()
+        return "break"
 
     def place(self, x, y, width, height):
         rewrap = width != self.width
@@ -491,7 +616,7 @@ class StatusLog(CanvasWidget):
                 self.canvas.coords(item, x + 10, y + 8 + index * self.line_height)
         if rewrap:
             self.rewrap()
-        self.offset = max(0, len(self.lines) - len(self.line_items))
+        self.offset = self.max_offset() if self.follow_tail else min(self.offset, self.max_offset())
         self.refresh()
 
 

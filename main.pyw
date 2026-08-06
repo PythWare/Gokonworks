@@ -10,7 +10,7 @@ def install_tk_exception_hook(log, show_messagebox=True):
         log.error("Tk callback exception (%s)", type(self).__name__, exc_info=(exc, val, tb))
         if show_messagebox:
             try:
-                messagebox.showerror("Mixer Error", "Something went wrong. Details were written to the log file.")
+                messagebox.showerror("Gokonworks Error", "Something went wrong. Details were written to the log file.")
             except Exception:
                 pass
 

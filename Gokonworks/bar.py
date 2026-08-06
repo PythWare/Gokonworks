@@ -58,6 +58,12 @@ BUTTON_GAP = 8
 
 PREVIEW_WIDTH = SIDE_WIDTH - PAD * 3
 PREVIEW_HEIGHT = 196
+PREVIEW_Y = PAD + 86
+NAV_Y = PREVIEW_Y + PREVIEW_HEIGHT + 8
+META_Y = NAV_Y + 40
+DESC_Y = META_Y + 108
+DESC_MIN = 96
+LOG_MIN = 110
 
 BOTTLE_HEIGHT = 230
 BOTTLE_GAP = 26
@@ -245,7 +251,7 @@ class ModManagerWindow(tk.Toplevel):
             font=("Segoe UI", 12, "bold"), width=SIDE_WIDTH - PAD * 2,
         )
 
-        preview_y = PAD + 86
+        preview_y = PREVIEW_Y
         self.side.create_rectangle(
             PAD, preview_y, PAD + PREVIEW_WIDTH, preview_y + PREVIEW_HEIGHT,
             fill=theme.field, outline=theme.panel_soft,
@@ -258,7 +264,7 @@ class ModManagerWindow(tk.Toplevel):
             fill=theme.text_muted, font=("Segoe UI", 9),
         )
 
-        nav_y = preview_y + PREVIEW_HEIGHT + 8
+        nav_y = NAV_Y
         Button(self.side, theme, PAD, nav_y, 54, 26, "<", lambda: self.cycle_preview(-1))
         self.preview_count = self.side.create_text(
             PAD + 78, nav_y + 13, text="0/0", anchor="w", fill=theme.text_muted,
@@ -270,14 +276,14 @@ class ModManagerWindow(tk.Toplevel):
             self.audio_label(), self.toggle_audio,
         )
 
-        meta_y = nav_y + 40
+        meta_y = META_Y
         self.detail_meta = self.side.create_text(
             PAD, meta_y, text="", anchor="nw", fill=theme.text_muted,
             font=("Segoe UI", 9), width=SIDE_WIDTH - PAD * 2,
         )
-        self.detail_description = self.side.create_text(
-            PAD, meta_y + 108, text="", anchor="nw", fill=theme.text,
-            font=("Segoe UI", 9), width=SIDE_WIDTH - PAD * 2,
+        self.detail_description = StatusLog(
+            self.side, theme, PAD, DESC_Y, SIDE_WIDTH - PAD * 2, DESC_MIN,
+            font=("Segoe UI", 9), follow_tail=False,
         )
 
         self.progress = ProgressBar(self.side, theme, PAD, PAD + panel_h + 12, SIDE_WIDTH - PAD * 2)
@@ -285,7 +291,18 @@ class ModManagerWindow(tk.Toplevel):
         self.side.bind("<Configure>", self.on_side_configure)
 
     def on_side_configure(self, event):
-        log_y = PAD + DETAILS_HEIGHT + 34
+        """
+        Give the description whatever vertical room the window can spare
+        """
+        spare = event.height - PAD - LOG_MIN - 34 - PAD
+        panel_h = max(DETAILS_HEIGHT, spare)
+        self.side_panel.place(PAD // 2, PAD, SIDE_WIDTH - PAD, panel_h)
+
+        desc_h = max(DESC_MIN, (PAD + panel_h) - DESC_Y - 12)
+        self.detail_description.place(PAD, DESC_Y, SIDE_WIDTH - PAD * 2, desc_h)
+
+        self.progress.place(PAD, PAD + panel_h + 12, SIDE_WIDTH - PAD * 2)
+        log_y = PAD + panel_h + 34
         self.log.place(PAD // 2, log_y, SIDE_WIDTH - PAD, max(48, event.height - log_y - PAD))
 
     def rescan(self):
@@ -483,7 +500,7 @@ class ModManagerWindow(tk.Toplevel):
         if bottle is None:
             self.side.itemconfigure(self.detail_title, text="Nothing selected")
             self.side.itemconfigure(self.detail_meta, text="")
-            self.side.itemconfigure(self.detail_description, text="")
+            self.detail_description.clear()
             self.show_preview()
             return
 
@@ -501,9 +518,7 @@ class ModManagerWindow(tk.Toplevel):
         if bottle.problem:
             meta.append(f"Note: {bottle.problem}")
         self.side.itemconfigure(self.detail_meta, text="\n".join(meta))
-        self.side.itemconfigure(
-            self.detail_description, text=bottle.description or "No description."
-        )
+        self.detail_description.set_text(bottle.description or "No description.")
 
         if bottle.manifest and not bottle.problem:
             try:
