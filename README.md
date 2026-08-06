@@ -64,3 +64,7 @@ Mod Creator example
 # PNG usage
 
 Gokonworks includes 2 PNG images in the pngs folder (bottle.png and glass.png), I don't own them. bottle.png and glass.png are free images that had a free distribution license that I downloaded to use with the GUI but their license forbids monetizing them. So if you use Gokonworks, you are now informed those assets are not permitted for financial gain.
+
+# Therion info
+
+The Therion_Guide folder holds a txt I wrote for the Therion executable found in volume.dat when unpacked, if you intend to make script mods that mod cutscenes, dialogue flow, altering what triggers a battle, adding new scenes, etc then I suggest reading the text file. The quick rundown is Therion compiles scripts for the game to read, for more details read the text file.
