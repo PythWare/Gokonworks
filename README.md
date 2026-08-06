@@ -30,7 +30,7 @@ When unpacking volume.dat, the Mocktail glass will gradually fill as a visual in
 
 For modders that wish to mod the game, you must run the unpack. Whenever you mod the unpacked files and want to apply them to the game, you need to package them with the Mod Creator. It's an easy process, just store the modded files in a folder hierarchy that matches the unpacked files (i.e., suppose you modded maplist.bin, the folder hierarchy for packaging the mod would be Unpacked_Files\lang_common\map\maplist.bin)
 
-For gamers who don't want to mod but instead download/apply mods, you don't need to unpack the game. Just place the downloaded .at mods in the Mods folder which is created when you open the Mod Manager within Gokonworks
+For gamers who don't want to mod but instead download/apply mods, you only need to unpack the game to create the akiba_taildata.json file. Then place the downloaded .at mods in the Mods folder which is created when you open the Mod Manager within Gokonworks
 
 To apply mods, select the bottle of the mod you want applied and click the Pour button. The log will update but also the Status of the mod will say Poured.
 
