@@ -16,7 +16,9 @@ After having those 2 requirements met, you should be able to run Gokonworks by d
 
 Gokonworks will unpack Akiba's volume.dat archive file completely, creating a taildata json file for storing metadata for proper and safe mod applying/disabling.
 
-Gokonworks appends mods to the end of volume.dat and batch updates TOCs as needed, disabling mods is handled by mod slicing/truncating.
+Gokonworks appends mods to the end of volume.dat and batch updates TOCs as needed if using Append mode, overwrite mode (used in cases where your mod doesn't change the file size of modded files) overwrites the original file data and updates TOCs if needed. Disabling mods is handled by mod slicing/truncating.
+
+Gokonworks will backup the volume.dat archive to ensure overwrite mode mods are disabled as cleanly as appended mods.
 
 # GUI samples and design explanation
 
@@ -28,7 +30,9 @@ When unpacking volume.dat, the Mocktail glass will gradually fill as a visual in
 
 # Modding Workflow
 
-For modders that wish to mod the game, you must run the unpack. Whenever you mod the unpacked files and want to apply them to the game, you need to package them with the Mod Creator. It's an easy process, just store the modded files in a folder hierarchy that matches the unpacked files (i.e., suppose you modded maplist.bin, the folder hierarchy for packaging the mod would be Unpacked_Files\lang_common\map\maplist.bin)
+For modders that wish to mod the game, you must run the unpack. Whenever you mod the unpacked files and want to apply them to the game, you need to package them with the Mod Creator. It's an easy process, just store the modded files in a folder hierarchy that matches the unpacked files (i.e., suppose you modded maplist.bin, the folder hierarchy for packaging the mod would be Unpacked_Files\lang_common\map\maplist.bin). Use append mode if your modded files are larger than the original files, use Overwrite mode (done by clicking the Append button toggle) if your mod doesn't change the file size of any original files. 
+
+However, the game by default has a size limit for volume.dat. Volume.dat can only grow to the maximum value a signed int32 has (which is 2,147,483,647), so if your mod requires appending make sure it doesn't exceed 360 MB of data being appended (360 MB is the remaining space vanilla volume.dat has). At a later date i'll make Gokonworks write an executable patch that removes the game's default limit for volume.dat but until then, keep appended mods belong 360 MB in size. If your mod is primarily just changing values and not increasing file sizes, just use overwrite mode.
 
 For gamers who don't want to mod but instead download/apply mods, you only need to unpack the game to create the akiba_taildata.json file. Then place the downloaded .at mods in the Mods folder which is created when you open the Mod Manager within Gokonworks
 
@@ -53,7 +57,9 @@ To disable mods, select a bottle that is filled and click the Empty button or Em
 # 
 Mod Creator example
 
-<img width="765" height="812" alt="exa2" src="https://github.com/user-attachments/assets/265b8fb3-5286-4c91-b051-1ea8d670ace6" />
+<img width="759" height="798" alt="gokon1" src="https://github.com/user-attachments/assets/f40df9e3-8d12-4c37-98e9-b13669557e2f" />
+
+<img width="763" height="799" alt="gokon2" src="https://github.com/user-attachments/assets/61b9fa05-b38c-495e-a911-cb1e84ebcfd2" />
 
 # Mod applied/disabled examples
 
