@@ -31,11 +31,14 @@ from .returns import MODS_FILENAME, restore_vanilla
 from .wetworks import (
     PROJECT_ROOT,
     GokonworksError,
+    backup_path,
     default_mods_dir,
     default_output_dir,
     default_volume_path,
     human_size,
     log,
+    make_backup,
+    needs_full_backup,
 )
 
 WINDOW_WIDTH = 1120
@@ -74,7 +77,7 @@ class CoreTools:
         root.configure(bg=self.theme.bg)
 
         if not PIL_AVAILABLE:
-            messagebox.showerror("Gokonworks", PIL_MESSAGE)
+            messagebox.showerror("Gokonworks", PIL_MESSAGE, parent=self.root)
             raise SystemExit(1)
 
         self.canvas = tk.Canvas(root, bg=self.theme.bg, highlightthickness=0)
@@ -208,6 +211,63 @@ class CoreTools:
         else:
             self.say(f"No archive at {self.volume_path}", "danger")
             self.say("Use Choose volume.dat to point at the game archive.", "muted")
+        if needs_full_backup(self.volume_path):
+            self.start_backup()
+        else:
+            self.check_unpack()
+
+    def start_backup(self):
+        """
+        Take the one archive copy the toolkit undoes everything from
+        """
+        if self.worker.busy:
+            return
+        volume_path = self.volume_path
+        target = backup_path(volume_path)
+        self.set_busy(True)
+        self.say(f"Backing up {volume_path.name} to {target.name}, this runs once.", "accent")
+        self.set_progress(0.0, "Backing up the archive")
+
+        def job(report):
+            return make_backup(
+                volume_path,
+                progress=lambda done, total, message: report("progress", (done, total, message)),
+            )
+
+        self.worker.start(
+            job,
+            {
+                "progress": self.on_backup_progress,
+                "done": self.on_backup_done,
+                "error": self.on_backup_error,
+            },
+            name="gokonworks-backup",
+        )
+
+    def on_backup_progress(self, payload):
+        done, total, message = payload
+        self.set_progress(done / total if total else 0.0, message)
+
+    def on_backup_done(self, result):
+        self.set_busy(False)
+        self.set_progress(1.0, "Backup ready")
+        self.say(
+            f"Backup ready: {Path(result['backup']).name}, {human_size(result['original_size'])}. "
+            "Keep it, it is the only way any mod gets undone.",
+            "ok",
+        )
+        self.check_unpack()
+
+    def on_backup_error(self, exc):
+        self.set_busy(False)
+        self.set_progress(0.0, "Backup failed")
+        self.say(f"Couldn't back the archive up: {exc}", "danger")
+        messagebox.showerror(
+            "Gokonworks",
+            f"The archive backup couldnt be written.\n\n{exc}\n\n"
+            "Mods can't be safely enabled until it exists.",
+            parent=self.root,
+        )
         self.check_unpack()
 
     def check_unpack(self, announce: bool = True):
@@ -251,11 +311,11 @@ class CoreTools:
         if self.worker.busy:
             return
         if not self.volume_path.is_file():
-            messagebox.showwarning("Unpack", f"No archive at:\n{self.volume_path}")
+            messagebox.showwarning("Unpack", f"No archive at:\n{self.volume_path}", parent=self.root)
             return
         if self.taildata_path().is_file() and not messagebox.askyesno(
             "Unpack",
-            f"{self.output_dir} already holds an unpack.\n\nUnpack again and overwrite it?",
+            f"{self.output_dir} already holds an unpack.\n\nUnpack again and overwrite it?", parent=self.root
         ):
             return
 
@@ -308,13 +368,13 @@ class CoreTools:
         self.gauge.set_caption("Spilled")
         self.set_progress(0.0, "Failed")
         self.say(f"{type(exc).__name__}: {exc}", "danger")
-        messagebox.showerror("Gokonworks", f"{type(exc).__name__}\n\n{exc}")
+        messagebox.showerror("Gokonworks", f"{type(exc).__name__}\n\n{exc}", parent=self.root)
 
     def start_verify(self):
         if self.worker.busy:
             return
         if not self.volume_path.is_file():
-            messagebox.showwarning("Verify", f"No archive at:\n{self.volume_path}")
+            messagebox.showwarning("Verify", f"No archive at:\n{self.volume_path}", parent=self.root)
             return
         volume_path = self.volume_path
         self.set_busy(True)
@@ -371,13 +431,13 @@ class CoreTools:
             messagebox.showinfo(
                 "Mod Manager",
                 "No taildata yet.\n\nUnpack the archive first so the mod manager knows "
-                "where every file lives.",
+                "where every file lives.", parent=self.root
             )
             return
         try:
             taildata = load_taildata(taildata_path)
         except GokonworksError as exc:
-            messagebox.showerror("Mod Manager", str(exc))
+            messagebox.showerror("Mod Manager", str(exc), parent=self.root)
             return
 
         from .bar import ModManagerWindow
@@ -396,7 +456,7 @@ class CoreTools:
         chosen = filedialog.askopenfilename(
             title="Select the Akiba's Trip volume archive",
             initialdir=str(self.volume_path.parent),
-            filetypes=[("Volume archive", "*.dat"), ("All files", "*.*")],
+            filetypes=[("Volume archive", "*.dat"), ("All files", "*.*")], parent=self.root
         )
         if not chosen:
             return
@@ -408,7 +468,7 @@ class CoreTools:
 
     def choose_output(self):
         chosen = filedialog.askdirectory(
-            title="Select the unpack folder", initialdir=str(self.output_dir.parent)
+            title="Select the unpack folder", initialdir=str(self.output_dir.parent), parent=self.root
         )
         if not chosen:
             return
@@ -422,18 +482,48 @@ class CoreTools:
     def restore_vanilla(self):
         if self.worker.busy:
             return
+        target = backup_path(self.volume_path)
+        if not target.is_file():
+            messagebox.showerror(
+                "Restore Vanilla",
+                f"There is no backup at {target.name}, so there is nothing to restore from.",
+                parent=self.root,
+            )
+            return
         if not messagebox.askyesno(
             "Restore Vanilla",
-            "Rewrite the archive index from the backup and cut off every appended byte?\n\n"
-            "This undoes all mods, including any the ledger has lost track of.",
+            f"Copy {target.name} back over {self.volume_path.name}?\n\n"
+            "This puts the whole archive back byte for byte and undoes every mod, "
+            "including any the ledger has lost track of.", parent=self.root
         ):
             return
-        try:
-            result = restore_vanilla(self.volume_path)
-        except GokonworksError as exc:
-            self.say(str(exc), "danger")
-            messagebox.showerror("Restore Vanilla", str(exc))
-            return
-        self.say(f"Restored {self.volume_path.name} to {human_size(result['restored_size'])}", "ok")
+
+        volume_path = self.volume_path
+        self.set_busy(True)
+        self.say(f"Restoring {volume_path.name} from {target.name}", "accent")
+        self.set_progress(0.0, "Restoring")
+
+        def job(report):
+            return restore_vanilla(
+                volume_path,
+                progress=lambda done, total, message: report("progress", (done, total, message)),
+            )
+
+        self.worker.start(
+            job,
+            {
+                "progress": self.on_backup_progress,
+                "done": self.on_restore_done,
+                "error": self.on_job_error,
+            },
+            name="gokonworks-restore",
+        )
+
+    def on_restore_done(self, result):
+        self.set_busy(False)
+        self.set_progress(1.0, "Restored")
+        self.say(
+            f"Restored {self.volume_path.name} to {human_size(result['restored_size'])}", "ok"
+        )
         self.say(f"Mod ledger cleared ({MODS_FILENAME})")
         log.info("Vanilla restore run from the hub")

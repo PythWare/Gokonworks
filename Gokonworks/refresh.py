@@ -147,6 +147,26 @@ def save_settings(project_root: Path, settings: dict):
         log.warning("Could not save settings: %s", exc)
 
 
+def own_window(window: tk.Toplevel, master: tk.Misc):
+    """
+    Tie a subwindow to whatever opened it
+    """
+    try:
+        window.transient(master.winfo_toplevel())
+    except (tk.TclError, AttributeError):
+        log.debug("Couldn't mark %r transient", window)
+
+
+def bring_forward(window: tk.Misc):
+    """Raise a window and put the keyboard back in it"""
+    try:
+        window.deiconify()
+        window.lift()
+        window.focus_force()
+    except tk.TclError:
+        pass
+
+
 def pick_theme(previous_key: str = "") -> Theme:
     """
     Pour a drink for this session
@@ -594,8 +614,13 @@ class StatusLog(CanvasWidget):
         self.canvas.itemconfigure(self.bar_item, fill=self.theme.text_muted)
 
     def wheel(self, event):
-        if not (self.x <= event.x <= self.x + self.width and self.y <= event.y <= self.y + self.height):
-            return "break"
+        """
+        Scroll only when the pointer is actually over this log
+        """
+        inside = (self.x <= event.x <= self.x + self.width
+                  and self.y <= event.y <= self.y + self.height)
+        if not inside:
+            return None
         target = max(0, self.offset - (1 if event.delta > 0 else -1) * 3)
         self.ensure(target + len(self.line_items) + self.CHUNK)
         if self.max_offset() == 0:

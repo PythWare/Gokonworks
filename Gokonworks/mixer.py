@@ -8,8 +8,15 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox
 
-from .recipe import GENRES, MAX_PREVIEW_IMAGES, PACKAGE_EXTENSION, create_package
-from .refresh import Button, Panel, ProgressBar, StatusLog, Theme, Worker
+from .recipe import (
+    APPLY_APPEND,
+    APPLY_OVERWRITE,
+    GENRES,
+    MAX_PREVIEW_IMAGES,
+    PACKAGE_EXTENSION,
+    create_package,
+)
+from .refresh import Button, Panel, ProgressBar, StatusLog, Theme, Worker, own_window
 from .wetworks import GokonworksError, human_size, log
 
 WINDOW_WIDTH = 760
@@ -35,6 +42,7 @@ class ModCreatorWindow(tk.Toplevel):
         self.image_paths: list[Path] = []
         self.audio_path: Path | None = None
         self.embedded: list[int] = []
+        self.apply_mode = APPLY_APPEND
 
         self.title("Gokonworks, Mod Creator")
         self.geometry(f"{WINDOW_WIDTH}x{WINDOW_HEIGHT}")
@@ -49,6 +57,7 @@ class ModCreatorWindow(tk.Toplevel):
 
         self.build()
         self.protocol("WM_DELETE_WINDOW", self.close)
+        own_window(self, master)
 
     def entry(self, x, y, width, value="") -> tk.Entry:
         widget = tk.Entry(
@@ -165,13 +174,19 @@ class ModCreatorWindow(tk.Toplevel):
         )
 
         actions_y = top + 456
+        action_h = BUTTON_HEIGHT + 6
         self.build_button = Button(
-            self.canvas, theme, PAD, actions_y, 176, BUTTON_HEIGHT + 6,
+            self.canvas, theme, PAD, actions_y, 176, action_h,
             "Bottle It", self.build_package, tone="accent",
         )
-        Button(self.canvas, theme, PAD + 186, actions_y, 150, BUTTON_HEIGHT + 6,
+        Button(self.canvas, theme, PAD + 186, actions_y, 150, action_h,
                "Clear Extras", self.clear_extras)
-        self.progress = ProgressBar(self.canvas, theme, PAD + 348, actions_y + 14, inner - 348)
+        self.mode_button = Button(
+            self.canvas, theme, PAD + 346, actions_y, 138, action_h,
+            self.mode_label(), self.flip_mode, tone="accent",
+        )
+        bar_x = PAD + 496
+        self.progress = ProgressBar(self.canvas, theme, bar_x, actions_y + 14, inner - 496)
 
         self.status_log = StatusLog(
             self.canvas, theme, PAD, actions_y + BUTTON_HEIGHT + 20, inner,
@@ -183,12 +198,43 @@ class ModCreatorWindow(tk.Toplevel):
             "lang_us/ui/texture/whatever.phyre because that is how each file is "
             "matched back to its slot in the archive."
         )
+        self.describe_mode()
+
+    def mode_label(self) -> str:
+        return "Append" if self.apply_mode == APPLY_APPEND else "Overwrite"
+
+    def flip_mode(self):
+        self.apply_mode = (
+            APPLY_OVERWRITE if self.apply_mode == APPLY_APPEND else APPLY_APPEND
+        )
+        self.mode_button.set_text(self.mode_label())
+        self.describe_mode()
+
+    def describe_mode(self):
+        """
+        Say what the mode does in the log
+        """
+        self.say(f"Apply mode: {self.mode_label()}", "accent")
+        if self.apply_mode == APPLY_APPEND:
+            self.say(
+                "Your files are added to the end of the archive and the index is "
+                "pointed at them. Works with any change, including files that grew "
+                "but the archive can only take about 360 MB of additions in total. "
+                "That's a limitation the game has until I patch the exe to remove it"
+            )
+        else:
+            self.say(
+                "Each file is written back over the bytes the original occupied, so "
+                "the archive doesnt grow and nothing else moves. Anything that no "
+                "longer fits its own block is appended instead, so only what "
+                "outgrew its slot costs any room."
+            )
 
     def say(self, message: str, tone: str = "muted"):
         self.status_log.write(message, tone)
 
     def choose_source(self):
-        chosen = filedialog.askdirectory(title="Select the folder holding your edited files")
+        chosen = filedialog.askdirectory(title="Select the folder holding your edited files", parent=self)
         if not chosen:
             return
         self.source_folder = Path(chosen)
@@ -218,7 +264,7 @@ class ModCreatorWindow(tk.Toplevel):
     def choose_images(self):
         chosen = filedialog.askopenfilenames(
             title="Select preview images",
-            filetypes=[("Images", "*.png *.jpg *.jpeg *.gif *.bmp"), ("All files", "*.*")],
+            filetypes=[("Images", "*.png *.jpg *.jpeg *.gif *.bmp"), ("All files", "*.*")], parent=self
         )
         if not chosen:
             return
@@ -231,7 +277,7 @@ class ModCreatorWindow(tk.Toplevel):
 
     def choose_audio(self):
         chosen = filedialog.askopenfilename(
-            title="Select a WAV to bundle", filetypes=[("WAV audio", "*.wav")]
+            title="Select a WAV to bundle", filetypes=[("WAV audio", "*.wav")], parent=self
         )
         if not chosen:
             return
@@ -266,17 +312,17 @@ class ModCreatorWindow(tk.Toplevel):
         if self.worker.busy:
             return
         if self.source_folder is None:
-            messagebox.showinfo("Mod Creator", "Pick the source folder first.")
+            messagebox.showinfo("Mod Creator", "Pick the source folder first.", parent=self)
             return
         name = self.name_entry.get().strip()
         if not name:
-            messagebox.showinfo("Mod Creator", "Give the mod a name.")
+            messagebox.showinfo("Mod Creator", "Give the mod a name.", parent=self)
             return
 
         safe = "".join(char for char in name if char not in '<>:"/\\|?*').strip() or "mod"
         output_path = self.mods_dir / f"{safe}{PACKAGE_EXTENSION}"
         if output_path.exists() and not messagebox.askyesno(
-            "Mod Creator", f"{output_path.name} already exists.\n\nOverwrite it?"
+            "Mod Creator", f"{output_path.name} already exists.\n\nOverwrite it?", parent=self
         ):
             return
 
@@ -292,9 +338,10 @@ class ModCreatorWindow(tk.Toplevel):
             "genre": self.genre_var.get(),
             "image_paths": list(self.image_paths),
             "audio_path": self.audio_path,
+            "apply_mode": self.apply_mode,
         }
         self.build_button.set_enabled(False)
-        self.say(f"Bottling {name}...", "accent")
+        self.say(f"Bottling {name} in {self.mode_label()} mode...", "accent")
 
         def job(report):
             return create_package(
@@ -330,7 +377,7 @@ class ModCreatorWindow(tk.Toplevel):
         self.build_button.set_enabled(True)
         self.progress.set_fraction(0.0)
         self.say(f"{type(exc).__name__}: {exc}", "danger")
-        messagebox.showerror("Mod Creator", f"{type(exc).__name__}\n\n{exc}")
+        messagebox.showerror("Mod Creator", f"{type(exc).__name__}\n\n{exc}", parent=self)
 
     def close(self):
         self.destroy()

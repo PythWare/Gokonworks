@@ -11,9 +11,11 @@ from typing import Iterable, Iterator
 from .ledger import TAILDATA_FILENAME
 from .returns import ReadyPayload, compress_payload
 from .wetworks import (
+    block_extents,
     GokonworksError,
     ProgressCallback,
     WinMemoryAudioPlayer,
+    human_size,
     log,
     normalize_archive_path,
     read_exact,
@@ -36,6 +38,10 @@ PACKAGE_MAGIC = b"AKIBA_TRIP_AT_MIX"
 PACKAGE_FORMAT = "akiba-trip-at"
 PACKAGE_VERSION = 1
 PACKAGE_EXTENSION = ".at"
+
+APPLY_APPEND = "append"
+APPLY_OVERWRITE = "overwrite"
+APPLY_MODES = (APPLY_APPEND, APPLY_OVERWRITE)
 HEADER_SIZE_STRUCT = struct.Struct("<I")
 
 MAX_PREVIEW_IMAGES = 5
@@ -101,7 +107,13 @@ def read_package_manifest(package_path: Path) -> dict:
     manifest.setdefault("entries", [])
     manifest.setdefault("images", [])
     manifest.setdefault("audio", None)
+    manifest.setdefault("apply_mode", APPLY_APPEND)
     return manifest
+
+
+def package_apply_mode(manifest: dict) -> str:
+    mode = str(manifest.get("apply_mode") or APPLY_APPEND).strip().lower()
+    return mode if mode in APPLY_MODES else APPLY_APPEND
 
 
 def check_against_taildata(manifest: dict, taildata: dict):
@@ -111,7 +123,7 @@ def check_against_taildata(manifest: dict, taildata: dict):
     if built_for and built_for != have:
         raise RecipeError(
             f"{Path(manifest['package_path']).name} was built for an archive of "
-            f"{built_for:,} bytes but this one is {have:,}. They are not the same game files."
+            f"{built_for:,} bytes but this one is {have:,}. They're not the same game files."
         )
     missing = [
         entry["path"] for entry in manifest["entries"] if entry["path"] not in taildata["files"]
@@ -248,6 +260,7 @@ def create_package(
     genre: str = DEFAULT_GENRE,
     image_paths: Iterable[Path] | None = None,
     audio_path: Path | None = None,
+    apply_mode: str = APPLY_APPEND,
     progress: ProgressCallback | None = None,
 ) -> dict:
     """
@@ -262,7 +275,7 @@ def create_package(
     genre = normalize_genre(genre)
 
     if not source_folder.is_dir():
-        raise RecipeError(f"Source folder does not exist: {source_folder}")
+        raise RecipeError(f"Source folder doesn't exist: {source_folder}")
 
     matched = collect_source_files(source_folder, taildata)
     if not matched:
@@ -272,15 +285,32 @@ def create_package(
             "lang_us/ui/texture/whatever.phyre"
         )
 
+    apply_mode = str(apply_mode or APPLY_APPEND).strip().lower()
+    if apply_mode not in APPLY_MODES:
+        raise RecipeError(f"Unknown apply mode {apply_mode!r}")
+
     records: list[dict] = []
     payloads: list[bytes] = []
+    slid = will_append = append_bytes = 0
     total = len(matched)
+    extents = block_extents(taildata) if apply_mode == APPLY_OVERWRITE else {}
 
     for index, (archive_path, file_path) in enumerate(matched, start=1):
         record = taildata["files"][archive_path]
         raw = read_asset(file_path)
         compressed = bool(record["compressed"])
+
         payload = compress_payload(raw) if compressed else raw
+
+        if apply_mode == APPLY_OVERWRITE:
+            tight = int(record["name_offset"]) - int(record["stored_offset"])
+            roomy = max(0, extents.get(archive_path, 0) - int(record["name_size"]))
+            if len(raw) != int(record["size"]) or len(payload) > roomy:
+                will_append += 1
+                append_bytes += len(payload) + int(record["name_size"])
+            elif len(payload) > tight:
+                slid += 1
+
         payloads.append(payload)
         records.append(
             {
@@ -300,6 +330,16 @@ def create_package(
         if progress:
             progress(index, total, f"Bottled {archive_path}")
 
+    if apply_mode == APPLY_OVERWRITE and progress:
+        in_place = total - will_append
+        note = (
+            f"{in_place} of {total} file(s) go back in place"
+            + (f", {slid} using their block's spare room" if slid else "")
+            + (f". {will_append} won't fit and will be appended, about "
+               f"{human_size(append_bytes)}" if will_append else ". Nothing is appended")
+        )
+        progress(total, total, note)
+
     image_records, image_blobs = build_image_records(image_paths or [])
     audio_record, audio_blob = build_audio_record(audio_path)
 
@@ -315,6 +355,7 @@ def create_package(
         "mod_version": version,
         "genre": genre,
         "description": description,
+        "apply_mode": apply_mode,
         "created_utc": utc_now(),
         "volume": taildata.get("volume", "volume.dat"),
         "original_size": int(taildata["original_size"]),
@@ -339,9 +380,10 @@ def create_package(
     if progress:
         progress(total, total, f"Wrote {output_path.name}")
 
-    log.info("Created package %s with %d entries", output_path.name, len(records))
+    log.info("Created %s package %s with %d entries", apply_mode, output_path.name, len(records))
     return {
         "package_path": str(output_path),
+        "apply_mode": apply_mode,
         "entries": len(records),
         "images": len(image_records),
         "has_audio": audio_record is not None,

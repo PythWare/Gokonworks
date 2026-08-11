@@ -14,8 +14,11 @@ from tkinter import messagebox
 from PIL import Image, ImageChops, ImageDraw, ImageOps, ImageTk
 
 from .recipe import (
+    APPLY_APPEND,
+    APPLY_OVERWRITE,
     PACKAGE_EXTENSION,
     RecipeError,
+    package_apply_mode,
     read_package_audio,
     read_package_images,
     read_package_manifest,
@@ -30,6 +33,7 @@ from .refresh import (
     fit_line,
     load_png,
     load_settings,
+    own_window,
     save_settings,
     scale_to_height,
     wrap_lines,
@@ -89,6 +93,7 @@ class Bottle:
     genre: str = ""
     version: str = ""
     description: str = ""
+    mode: str = APPLY_APPEND
     image_count: int = 0
     has_audio: bool = False
     manifest: dict = field(default_factory=dict)
@@ -195,6 +200,7 @@ class ModManagerWindow(tk.Toplevel):
 
         self.build()
         self.worker = Worker(self.shelf)
+        own_window(self, master)
         self.rescan()
 
     def build(self):
@@ -360,6 +366,7 @@ class ModManagerWindow(tk.Toplevel):
             genre=manifest.get("genre", ""),
             version=manifest.get("mod_version", ""),
             description=manifest.get("description", ""),
+            mode=package_apply_mode(manifest),
             image_count=len(manifest.get("images", [])),
             has_audio=bool(manifest.get("audio")),
             manifest=manifest,
@@ -507,9 +514,10 @@ class ModManagerWindow(tk.Toplevel):
         self.refresh_bottle(bottle)
         self.side.itemconfigure(self.detail_title, text=bottle.name)
 
+        applies = "Overwrites in place" if bottle.mode == APPLY_OVERWRITE else "Appends"
         meta = [
             f"Status: {'Poured' if bottle.enabled else 'Empty'}",
-            f"Files: {bottle.entries}",
+            f"Files: {bottle.entries}   Applies: {applies}",
         ]
         if bottle.author:
             meta.append(f"Author: {bottle.author}   Version: {bottle.version or '1'}")
@@ -612,16 +620,16 @@ class ModManagerWindow(tk.Toplevel):
     def enable_selected(self):
         bottle = self.selected
         if bottle is None:
-            messagebox.showinfo("Pour", "Pick a bottle off the shelf first.")
+            messagebox.showinfo("Pour", "Pick a bottle off the shelf first.", parent=self)
             return
         if bottle.enabled:
             self.say(f"{bottle.name} is already poured.", "danger")
             return
         if bottle.problem:
-            messagebox.showerror("Pour", bottle.problem)
+            messagebox.showerror("Pour", bottle.problem, parent=self)
             return
         if not bottle.entries:
-            messagebox.showerror("Pour", "This package has no files in it.")
+            messagebox.showerror("Pour", "This package has no files in it.", parent=self)
             return
 
         volume_path, taildata, source = self.volume_path, self.taildata, bottle.source
@@ -643,7 +651,7 @@ class ModManagerWindow(tk.Toplevel):
     def disable_selected(self):
         bottle = self.selected
         if bottle is None:
-            messagebox.showinfo("Empty", "Pick a bottle off the shelf first.")
+            messagebox.showinfo("Empty", "Pick a bottle off the shelf first.", parent=self)
             return
         if not bottle.enabled:
             self.say(f"{bottle.name} is already empty.", "danger")
@@ -677,7 +685,7 @@ class ModManagerWindow(tk.Toplevel):
             lines.append(f"This empties {sum(1 for b in self.bottles if b.enabled)} poured bottle(s).")
         if dead:
             lines.append(f"It also reclaims {human_size(dead)} of appended data.")
-        if not messagebox.askyesno("Empty Every Bottle", "\n\n".join(lines)):
+        if not messagebox.askyesno("Empty Every Bottle", "\n\n".join(lines), parent=self):
             return
 
         volume_path, taildata = self.volume_path, self.taildata
@@ -751,7 +759,7 @@ class ModManagerWindow(tk.Toplevel):
         self.set_busy(False)
         self.progress.set_fraction(0.0)
         self.say(f"{type(exc).__name__}: {exc}", "danger")
-        messagebox.showerror("Mod Shelf", f"{type(exc).__name__}\n\n{exc}")
+        messagebox.showerror("Mod Shelf", f"{type(exc).__name__}\n\n{exc}", parent=self)
 
     def open_mods_folder(self):
         self.mods_dir.mkdir(parents=True, exist_ok=True)

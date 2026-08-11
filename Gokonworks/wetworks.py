@@ -21,11 +21,13 @@ MODS_FOLDER = "Mods"
 
 LOG_PATH = PROJECT_ROOT / "gokonworks.log"
 
-TOC_BACKUP_SUFFIX = ".toc.bak"
-VANILLA_SUFFIX = ".vanilla.json"
+BACKUP_SUFFIX = ".bak"
+LEGACY_TOC_SUFFIX = ".toc.bak"
+LEGACY_VANILLA_SUFFIX = ".vanilla.json"
 VANILLA_FORMAT = "akiba-vanilla-fingerprint"
 
 SECTOR = 2048
+COPY_CHUNK = 8 * 1024 * 1024
 
 ProgressCallback = Callable[[int, int, str], None]
 
@@ -205,11 +207,36 @@ class WinMemoryAudioPlayer:
         self.buffer = None
 
 
-def toc_backup_paths(volume_path: Path) -> tuple[Path, Path]:
+def block_extents(taildata: dict) -> dict[str, int]:
+    """
+    How much room each file's block actually has
+    """
+    files = taildata["files"]
+    ordered = sorted(
+        (int(record["stored_offset"]), path, record) for path, record in files.items()
+    )
+    data_end = max(
+        (int(record["name_offset"]) + int(record["name_size"]) for record in files.values()),
+        default=0,
+    )
+    extents: dict[str, int] = {}
+    for index, (stored, path, record) in enumerate(ordered):
+        boundary = ordered[index + 1][0] if index + 1 < len(ordered) else data_end
+        extents[path] = max(0, boundary - stored)
+    return extents
+
+
+def backup_path(volume_path: Path) -> Path:
+    """The one file the toolkit needs to undo anything"""
+    volume_path = Path(volume_path)
+    return volume_path.with_name(volume_path.name + BACKUP_SUFFIX)
+
+
+def legacy_backup_paths(volume_path: Path) -> tuple[Path, Path]:
     volume_path = Path(volume_path)
     return (
-        volume_path.with_name(volume_path.name + TOC_BACKUP_SUFFIX),
-        volume_path.with_name(volume_path.name + VANILLA_SUFFIX),
+        volume_path.with_name(volume_path.name + LEGACY_TOC_SUFFIX),
+        volume_path.with_name(volume_path.name + LEGACY_VANILLA_SUFFIX),
     )
 
 
@@ -237,58 +264,75 @@ def pristine_size(volume_path: Path) -> int:
     return base + end
 
 
-def make_toc_backup(volume_path: Path) -> dict:
+def copy_stream(source, target, total: int, label: str, progress: ProgressCallback | None):
+    done = 0
+    while True:
+        chunk = source.read(COPY_CHUNK)
+        if not chunk:
+            break
+        target.write(chunk)
+        done += len(chunk)
+        if progress:
+            progress(done, total, f"{label} {human_size(done)} of {human_size(total)}")
+    target.flush()
+    os.fsync(target.fileno())
+    return done
+
+
+def make_backup(volume_path: Path, progress: ProgressCallback | None = None) -> dict:
     """
-    Snapshot the header and the whole table of contents
+    Copy the whole clean archive once
     """
     volume_path = Path(volume_path)
-    backup_path, fingerprint_path = toc_backup_paths(volume_path)
-    magic, files, names, base, fsize = peek_header(volume_path)
-    toc_bytes = 20 + 24 * files
+    target = backup_path(volume_path)
+    total = volume_path.stat().st_size
+    partial = target.with_name(target.name + ".part")
 
-    with volume_path.open("rb") as file_obj:
-        blob = read_exact(file_obj, toc_bytes, "volume toc")
+    try:
+        with volume_path.open("rb") as source, partial.open("wb") as sink:
+            copy_stream(source, sink, total, "Backing up", progress)
+        partial.replace(target)
+    except OSError as exc:
+        partial.unlink(missing_ok=True)
+        raise GokonworksError(f"Couldn't write the archive backup: {exc}") from exc
 
-    backup_path.write_bytes(blob)
-    fingerprint = {
-        "format": VANILLA_FORMAT,
-        "version": 1,
-        "created_utc": utc_now(),
-        "volume": volume_path.name,
-        "original_size": volume_path.stat().st_size,
-        "entry_count": files,
-        "toc_bytes": toc_bytes,
-        "toc_sha256": sha256_bytes(blob),
-    }
-    write_json(fingerprint_path, fingerprint)
-    log.info("Created TOC backup for %s (%d entries)", volume_path.name, files)
-    return fingerprint
+    magic, files, names, base, fsize = peek_header(target)
+    log.info("Backed up %s to %s (%s)", volume_path.name, target.name, human_size(total))
+    return {"backup": str(target), "original_size": total, "entry_count": files}
 
 
-def load_fingerprint(volume_path: Path) -> dict | None:
-    backup_path, fingerprint_path = toc_backup_paths(volume_path)
-    if not fingerprint_path.is_file():
-        return None
-    data = read_json(fingerprint_path, "vanilla fingerprint")
-    if data.get("format") != VANILLA_FORMAT:
-        raise GokonworksError(f"{fingerprint_path} isn't a Gokonworks vanilla fingerprint")
-    return data
+def backup_available(volume_path: Path) -> bool:
+    return backup_path(volume_path).is_file()
+
+
+def backup_original_size(volume_path: Path) -> int:
+    """Vanilla size, straight off the backup rather than out of a side file"""
+    target = backup_path(volume_path)
+    if not target.is_file():
+        raise GokonworksError("No archive backup exists, can't tell the vanilla size")
+    return target.stat().st_size
+
+
+def backup_toc_blob(volume_path: Path) -> bytes:
+    """Header plus the whole table of contents, walked out of the backup"""
+    target = backup_path(volume_path)
+    if not target.is_file():
+        raise GokonworksError("No archive backup exists, can't read the vanilla index")
+    with target.open("rb") as file_obj:
+        header = read_exact(file_obj, 20, "backup header")
+        magic, files, names, base, fsize = struct.unpack(">5I", header)
+        return header + read_exact(file_obj, 24 * files, "backup toc")
 
 
 def restore_toc_from_backup(volume_path: Path) -> dict:
-    """Reset, put the vanilla TOC back and cut off every appended byte"""
+    """
+    Put the vanilla index back and cut off every appended byte
+    """
     volume_path = Path(volume_path)
-    backup_path, fingerprint_path = toc_backup_paths(volume_path)
-    fingerprint = load_fingerprint(volume_path)
-    if fingerprint is None or not backup_path.is_file():
-        raise GokonworksError("No TOC backup exists, can't restore the vanilla archive")
-
-    blob = backup_path.read_bytes()
-    if sha256_bytes(blob) != fingerprint.get("toc_sha256"):
-        raise GokonworksError(f"TOC backup is corrupt: {backup_path}")
-
-    original_size = int(fingerprint["original_size"])
+    blob = backup_toc_blob(volume_path)
+    original_size = backup_original_size(volume_path)
     previous_size = volume_path.stat().st_size
+
     with volume_path.open("r+b") as file_obj:
         file_obj.seek(0)
         file_obj.write(blob)
@@ -298,8 +342,9 @@ def restore_toc_from_backup(volume_path: Path) -> dict:
         os.fsync(file_obj.fileno())
 
     log.info(
-        "Restored %s from TOC backup, %s to %s",
-        volume_path.name, human_size(previous_size), human_size(original_size),
+        "Restored the index of %s from %s, %s to %s",
+        volume_path.name, backup_path(volume_path).name,
+        human_size(previous_size), human_size(original_size),
     )
     return {
         "volume": str(volume_path),
@@ -307,6 +352,121 @@ def restore_toc_from_backup(volume_path: Path) -> dict:
         "restored_size": original_size,
         "reclaimed_bytes": max(0, previous_size - original_size),
     }
+
+
+def restore_regions_from_backup(
+    volume_path: Path,
+    regions: list[tuple[int, int]],
+    progress: ProgressCallback | None = None,
+) -> int:
+    """
+    Copy specific byte ranges back out of the backup
+    """
+    volume_path = Path(volume_path)
+    source_path = backup_path(volume_path)
+    if not source_path.is_file():
+        raise GokonworksError("No archive backup exists, can't undo an overwrite mod")
+
+    ordered = sorted((int(start), int(length)) for start, length in regions if int(length) > 0)
+    if not ordered:
+        return 0
+
+    limit = source_path.stat().st_size
+    written = 0
+    total = len(ordered)
+    with source_path.open("rb") as source, volume_path.open("r+b") as target:
+        for index, (start, length) in enumerate(ordered, start=1):
+            if start >= limit:
+                log.warning("Skipping a region at %d, past the end of the backup", start)
+                continue
+            if start + length > limit:
+                log.info("Trimming a restore region at %d from %d to %d bytes",
+                         start, length, limit - start)
+                length = limit - start
+            source.seek(start)
+            target.seek(start)
+            remaining = length
+            while remaining:
+                chunk = source.read(min(COPY_CHUNK, remaining))
+                if not chunk:
+                    raise GokonworksError("Backup ended early while restoring a region")
+                target.write(chunk)
+                remaining -= len(chunk)
+                written += len(chunk)
+            if progress:
+                progress(index, total, f"Restored {human_size(length)} of original data")
+        target.flush()
+        os.fsync(target.fileno())
+
+    log.info("Restored %d region(s), %s, from the backup", len(ordered), human_size(written))
+    return written
+
+
+def restore_from_backup(volume_path: Path, progress: ProgressCallback | None = None) -> dict:
+    """Put the whole archive back, byte for byte"""
+    volume_path = Path(volume_path)
+    source_path = backup_path(volume_path)
+    if not source_path.is_file():
+        raise GokonworksError("No archive backup exists, can't restore the vanilla archive")
+
+    previous_size = volume_path.stat().st_size if volume_path.is_file() else 0
+    total = source_path.stat().st_size
+    with source_path.open("rb") as source, volume_path.open("r+b") as target:
+        target.seek(0)
+        copy_stream(source, target, total, "Restoring", progress)
+        target.truncate(total)
+        target.flush()
+        os.fsync(target.fileno())
+
+    log.info("Restored %s from %s, %s", volume_path.name, source_path.name, human_size(total))
+    return {
+        "volume": str(volume_path),
+        "previous_size": previous_size,
+        "restored_size": total,
+        "reclaimed_bytes": max(0, previous_size - total),
+    }
+
+
+def migrate_legacy_backup(volume_path: Path) -> bool:
+    """
+    Fold an old index only backup into the new shape
+    """
+    volume_path = Path(volume_path)
+    toc_file, fingerprint_file = legacy_backup_paths(volume_path)
+    if not (toc_file.is_file() and fingerprint_file.is_file()):
+        return False
+
+    try:
+        fingerprint = read_json(fingerprint_file, "vanilla fingerprint")
+        if fingerprint.get("format") != VANILLA_FORMAT:
+            return False
+        blob = toc_file.read_bytes()
+        if sha256_bytes(blob) != fingerprint.get("toc_sha256"):
+            log.warning("Legacy TOC backup is corrupt, ignoring it")
+            return False
+        original_size = int(fingerprint["original_size"])
+        previous = volume_path.stat().st_size
+        with volume_path.open("r+b") as file_obj:
+            file_obj.seek(0)
+            file_obj.write(blob)
+            if previous > original_size:
+                file_obj.truncate(original_size)
+            file_obj.flush()
+            os.fsync(file_obj.fileno())
+    except (GokonworksError, OSError, KeyError, ValueError) as exc:
+        log.warning("Couldnt use the legacy backup: %s", exc)
+        return False
+
+    toc_file.unlink(missing_ok=True)
+    fingerprint_file.unlink(missing_ok=True)
+    log.info("Migrated the legacy index backup, archive is back to %s", human_size(original_size))
+    return True
+
+
+def needs_full_backup(volume_path: Path | None = None) -> bool:
+    """Whether the one time archive copy still has to be taken"""
+    volume_path = Path(volume_path) if volume_path else default_volume_path()
+    return volume_path.is_file() and not backup_path(volume_path).is_file()
 
 
 def ensure_backups(volume_path: Path | None = None) -> tuple[bool, str, str]:
@@ -340,55 +500,46 @@ def ensure_backups(volume_path: Path | None = None) -> tuple[bool, str, str]:
         log.error("Bad magic 0x%08X in %s", magic, volume_path)
         return False, "error", message
 
-    try:
-        fingerprint = load_fingerprint(volume_path)
-    except GokonworksError as exc:
-        return False, "error", str(exc)
+    target = backup_path(volume_path)
 
-    backup_path, fingerprint_path = toc_backup_paths(volume_path)
-
-    if fingerprint is None:
-        expected = pristine_size(volume_path)
+    if target.is_file():
+        original_size = target.stat().st_size
         actual = volume_path.stat().st_size
+        if actual < original_size:
+            message = (
+                f"{volume_path.name} is smaller than the backup "
+                f"({human_size(actual)} vs {human_size(original_size)}).\n\n"
+                "The archive was replaced or truncated. Restore it from "
+                f"{target.name}, or delete the backup and start again from a clean archive."
+            )
+            log.warning("Volume shrank below the backup size")
+            return False, "warning", message
+        return True, "info", ""
+
+    migrated = migrate_legacy_backup(volume_path)
+    actual = volume_path.stat().st_size
+
+    if not migrated:
+        expected = pristine_size(volume_path)
         if actual != expected:
             message = (
                 f"{volume_path.name} is {human_size(actual)} but a vanilla archive of this "
-                f"TOC should be {human_size(expected)}.\n\n"
+                f"index should be {human_size(expected)}.\n\n"
                 "It looks like this archive was already modified and there is no backup to "
                 "compare against. Restore a clean copy before enabling any mods."
             )
             log.warning("Volume size %d != pristine %d and no backup exists", actual, expected)
             return False, "warning", message
-        try:
-            make_toc_backup(volume_path)
-        except (GokonworksError, OSError) as exc:
-            log.error("Couldn't create TOC backup: %s", exc)
-            return False, "error", f"Couldn't create the TOC backup.\n\n{exc}"
-        message = (
-            f"First run, backed up the archive index for {volume_path.name}.\n\n"
-            f"Saved to: {backup_path.name}\n"
-            "Keep this file. It's all the toolkit needs to undo any mod."
-        )
-        return True, "info", message
 
-    if not backup_path.is_file():
-        message = (
-            f"The TOC backup {backup_path.name} is missing but its fingerprint is still here.\n\n"
-            "Mods cannot be safely undone until a clean archive is restored."
-        )
-        log.warning("TOC backup missing: %s", backup_path)
-        return False, "warning", message
-
-    original_size = int(fingerprint.get("original_size", 0))
-    actual = volume_path.stat().st_size
-    if actual < original_size:
-        message = (
-            f"{volume_path.name} is smaller than the backed up vanilla size "
-            f"({human_size(actual)} vs {human_size(original_size)}).\n\n"
-            "The archive was replaced or truncated. Delete the stale backup files and "
-            "restart the toolkit against a clean archive."
-        )
-        log.warning("Volume shrank below recorded original size")
-        return False, "warning", message
-
-    return True, "info", ""
+    lead = (
+        "Your old index backup has been folded in and the archive is back to vanilla.\n\n"
+        if migrated else "First run.\n\n"
+    )
+    message = (
+        f"{lead}Gokonworks is about to copy {volume_path.name} to {target.name} "
+        f"({human_size(actual)}).\n\n"
+        "That one copy is everything the toolkit needs to undo any mod, including the "
+        "kind that overwrites files in place. It runs in the background, the log will "
+        "say when it is done."
+    )
+    return True, "info", message
