@@ -3,7 +3,6 @@ Handles the reading logic
 """
 
 from __future__ import annotations
-
 import struct, zlib
 from dataclasses import dataclass, asdict
 from pathlib import Path
@@ -98,7 +97,6 @@ class VolumeEntry:
 
     @property
     def stored_size(self) -> int:
-        """Bytes on disk, derived from where this entry's name string begins"""
         return self.name_offset - self.stored_offset
 
     @property
@@ -115,12 +113,10 @@ class VolumeEntry:
 
     @property
     def hash_matches(self) -> bool:
-        """Whether the stored hash agrees with the game's hash of this name"""
         return self.hash == hash_name(self.name)
 
     @property
     def end_offset(self) -> int:
-        """End of this entry's block, payload plus the trailing name string"""
         return self.name_offset + self.name_size
 
 
@@ -195,7 +191,6 @@ def decompress_payload(payload: bytes, entry: VolumeEntry) -> bytes:
 
 
 class Volume:
-    """Read only view over volume.dat"""
 
     def __init__(self, path: Path):
         self.path = Path(path)
@@ -221,7 +216,6 @@ class Volume:
 
     @property
     def pristine_size(self) -> int:
-        """Where the vanilla archive ends, anything past this was appended"""
         return self.header.base + max(entry.end_offset for entry in self.entries)
 
     @property
@@ -230,17 +224,15 @@ class Volume:
 
     @property
     def free_toc_slots(self) -> int:
-        """How many entries could be inserted before the TOC would collide with base"""
         return max(0, (self.header.base - self.header.toc_end) // ENTRY_STRUCT.size)
 
     def entry(self, path: str) -> VolumeEntry:
         try:
             return self.by_path[normalize_archive_path(path)]
         except KeyError:
-            raise VolumeError(f"{path} is not in {self.path.name}") from None
+            raise VolumeError(f"{path} isnt in {self.path.name}") from None
 
     def read_payload(self, entry: VolumeEntry) -> bytes:
-        """The bytes exactly as stored, still compressed when zip is set"""
         end = entry.absolute_offset + entry.stored_size
         if entry.absolute_offset < 0 or end > self.file_size:
             raise VolumeError(f"{entry.path} points outside {self.path.name}")
@@ -274,7 +266,6 @@ class Volume:
         }
 
     def check(self) -> dict:
-        """Integrity sweep"""
         summary = {
             "volume": str(self.path),
             "file_size": self.file_size,
@@ -315,9 +306,6 @@ def open_volume(path: Path | None = None) -> Volume:
 
 
 def build_taildata(volume: Volume) -> dict:
-    """
-    The single JSON every unpacked file gets recorded in
-    """
     return {
         "format": TAILDATA_FORMAT,
         "version": TAILDATA_VERSION,
@@ -344,12 +332,6 @@ def unpack_volume(
     progress: ProgressCallback | None = None,
     limit: int | None = None,
 ) -> dict:
-    """
-    Extract every entry to output_dir and drop the taildata JSON beside them
-
-    Entries are walked in payload order instead of TOC order so the read head
-    sweeps the archive once instead of seeking 15,000 times
-    """
     volume_path = Path(volume_path) if volume_path else default_volume_path()
     output_dir = Path(output_dir) if output_dir else default_output_dir()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -398,7 +380,7 @@ def unpack_volume(
 def load_taildata(path: Path) -> dict:
     data = read_json(path, "taildata manifest")
     if data.get("format") != TAILDATA_FORMAT:
-        raise VolumeError(f"{path} is not an Akiba's Trip taildata manifest")
+        raise VolumeError(f"{path} isnt an Akiba's Trip taildata manifest")
     if int(data.get("version", 0)) != TAILDATA_VERSION:
         raise VolumeError(f"Unsupported taildata version {data.get('version')!r}")
     data.setdefault("files", {})
@@ -407,9 +389,6 @@ def load_taildata(path: Path) -> dict:
 
 
 def unpack_status(output_dir: Path, sample: int = 240) -> dict:
-    """
-    Ask the disk whether an unpack is really sitting in this folder
-    """
     output_dir = Path(output_dir)
     status = {
         "output_dir": str(output_dir),
@@ -450,7 +429,6 @@ def unpack_status(output_dir: Path, sample: int = 240) -> dict:
 
 
 def find_taildata(start: Path) -> Path | None:
-    """Walk up from an unpacked folder looking for the manifest that owns it"""
     start = Path(start).resolve()
     for candidate in (start, *start.parents):
         taildata_path = candidate / TAILDATA_FILENAME

@@ -3,13 +3,11 @@ Handles reuseable panels that get imported into editors/tools
 """
 
 from __future__ import annotations
-
 import queue, random, threading
 import tkinter as tk
 import tkinter.font as tkfont
 from dataclasses import dataclass
 from pathlib import Path
-
 from .wetworks import PNG_DIR, log, read_json, write_json
 
 try:
@@ -29,9 +27,6 @@ SETTINGS_FILENAME = "gokonworks_settings.json"
 
 @dataclass(frozen=True)
 class Theme:
-    """
-    One gokon mocktail, the liquid pair is the drink and everything else is the room
-    """
 
     key: str
     name: str
@@ -123,10 +118,8 @@ THEMES: tuple[Theme, ...] = (
 
 THEMES_BY_KEY = {theme.key: theme for theme in THEMES}
 
-
 def settings_path(project_root: Path) -> Path:
     return Path(project_root) / SETTINGS_FILENAME
-
 
 def load_settings(project_root: Path) -> dict:
     path = settings_path(project_root)
@@ -139,7 +132,6 @@ def load_settings(project_root: Path) -> dict:
         log.warning("Ignoring unreadable settings file: %s", exc)
     return defaults
 
-
 def save_settings(project_root: Path, settings: dict):
     try:
         write_json(settings_path(project_root), settings)
@@ -148,9 +140,6 @@ def save_settings(project_root: Path, settings: dict):
 
 
 def own_window(window: tk.Toplevel, master: tk.Misc):
-    """
-    Tie a subwindow to whatever opened it
-    """
     try:
         window.transient(master.winfo_toplevel())
     except (tk.TclError, AttributeError):
@@ -158,7 +147,6 @@ def own_window(window: tk.Toplevel, master: tk.Misc):
 
 
 def bring_forward(window: tk.Misc):
-    """Raise a window and put the keyboard back in it"""
     try:
         window.deiconify()
         window.lift()
@@ -168,9 +156,6 @@ def bring_forward(window: tk.Misc):
 
 
 def pick_theme(previous_key: str = "") -> Theme:
-    """
-    Pour a drink for this session
-    """
     others = [theme for theme in THEMES if theme.key != previous_key]
     if not others:
         return random.choice(THEMES)
@@ -179,9 +164,6 @@ def pick_theme(previous_key: str = "") -> Theme:
     return random.choice(others)
 
 def cut_to_fit(font: tkfont.Font, text: str, max_width: int) -> int:
-    """
-    Length of the longest prefix of text that still fits
-    """
     low, high = 1, min(len(text), max(1, max_width))
     while low < high:
         middle = (low + high + 1) // 2
@@ -193,9 +175,6 @@ def cut_to_fit(font: tkfont.Font, text: str, max_width: int) -> int:
 
 
 def wrap_one(font: tkfont.Font, text: str, max_width: int, start: int = 0) -> tuple[str, int]:
-    """
-    Wrap one line
-    """
     length = len(text)
     index = start
     while index < length and text[index] == " ":
@@ -223,9 +202,7 @@ def wrap_one(font: tkfont.Font, text: str, max_width: int, start: int = 0) -> tu
         return text[begin:begin + cut], begin + cut
     return text[begin:last_fit], last_fit
 
-
 def fit_line(font: tkfont.Font, text: str, max_width: int) -> str:
-    """Single line, ellipsised in the middle of a word rather than overflowing"""
     if max_width <= 0 or font.measure(text) <= max_width:
         return text
     ellipsis = "..."
@@ -239,9 +216,6 @@ def fit_line(font: tkfont.Font, text: str, max_width: int) -> str:
 
 
 def wrap_lines(font: tkfont.Font, text: str, max_width: int, max_lines: int = 0) -> list[str]:
-    """
-    Word wrap measured in pixels
-    """
     lines: list[str] = []
     for paragraph in text.splitlines() or [""]:
         cursor = 0
@@ -262,9 +236,6 @@ def require_pil():
 
 
 def scale_to_height(image, height: int):
-    """
-    Proportional LANCZOS downscale
-    """
     require_pil()
     width = max(1, round(image.width * height / image.height))
     return image.resize((width, max(1, height)), Image.Resampling.LANCZOS)
@@ -278,7 +249,6 @@ def load_png(name: str):
     return Image.open(path).convert("RGBA")
 
 class CanvasWidget:
-    """Base for anything drawn onto a shared canvas and tracked by item id"""
 
     def __init__(self, canvas: tk.Canvas, theme: Theme):
         self.canvas = canvas
@@ -296,7 +266,6 @@ class CanvasWidget:
 
 
 class Panel(CanvasWidget):
-    """Flat backing plate with a title"""
 
     def __init__(self, canvas, theme, x, y, width, height, title="", fill=None):
         super().__init__(canvas, theme)
@@ -325,7 +294,6 @@ class Panel(CanvasWidget):
 
 
 class Button(CanvasWidget):
-    """Drawn button"""
 
     def __init__(self, canvas, theme, x, y, width, height, text, command, tone="normal"):
         super().__init__(canvas, theme)
@@ -355,7 +323,6 @@ class Button(CanvasWidget):
             canvas.tag_bind(item, "<ButtonRelease-1>", self.click)
 
     def edge(self) -> str:
-        """Resting outline, gives each tone its identity"""
         if self.tone == "danger":
             return self.theme.danger
         if self.tone == "accent":
@@ -363,9 +330,6 @@ class Button(CanvasWidget):
         return self.theme.panel_soft
 
     def hover_fill(self) -> str:
-        """
-        Lit background for a hovered button
-        """
         if self.tone == "danger":
             return self.theme.danger
         if self.tone == "accent":
@@ -421,7 +385,6 @@ class Button(CanvasWidget):
         )
 
 class ProgressBar(CanvasWidget):
-    """Thin two tone bar"""
 
     def __init__(self, canvas, theme, x, y, width, height=10):
         super().__init__(canvas, theme)
@@ -455,9 +418,6 @@ class ProgressBar(CanvasWidget):
 
 
 class StatusLog(CanvasWidget):
-    """
-    Scrolling text panel that wraps to its own width
-    """
 
     MAX_LINES = 400
     BAR_WIDTH = 4
@@ -513,9 +473,6 @@ class StatusLog(CanvasWidget):
         }.get(tone, self.theme.text_muted)
 
     def set_text(self, text: str, tone: str = "text"):
-        """
-        Replace everything with one block and go back to the top
-        """
         colour = self.tone_colour(tone)
         self.messages = [(text, colour)] if text else []
         self.paragraphs = (text or "").splitlines() or ([""] if text else [])
@@ -531,9 +488,6 @@ class StatusLog(CanvasWidget):
         self.set_text("")
 
     def ensure(self, needed: int):
-        """
-        Wrap forward until there are needed lines or the text runs out
-        """
         width = self.width - 20
         while len(self.lines) < needed and self.paragraph_index < len(self.paragraphs):
             paragraph = self.paragraphs[self.paragraph_index]
@@ -566,9 +520,6 @@ class StatusLog(CanvasWidget):
         return max(0, len(self.lines) - len(self.line_items))
 
     def rewrap(self):
-        """
-        Redo the wrapping after a resize changed the width
-        """
         if self.paragraphs:
             keep = self.offset
             self.paragraph_index = 0
@@ -596,7 +547,6 @@ class StatusLog(CanvasWidget):
         self.refresh_bar()
 
     def refresh_bar(self):
-        """A thumb on the right edge, shown only when there is more to see"""
         visible = len(self.line_items)
         total = len(self.lines)
         if total <= visible:
@@ -614,9 +564,6 @@ class StatusLog(CanvasWidget):
         self.canvas.itemconfigure(self.bar_item, fill=self.theme.text_muted)
 
     def wheel(self, event):
-        """
-        Scroll only when the pointer is actually over this log
-        """
         inside = (self.x <= event.x <= self.x + self.width
                   and self.y <= event.y <= self.y + self.height)
         if not inside:
@@ -646,9 +593,6 @@ class StatusLog(CanvasWidget):
 
 
 class GlassGauge(CanvasWidget):
-    """
-    The cocktail glass in the corner that fills as the archive is unpacked
-    """
     REFERENCE = (400.0, 500.0)
     INTERIOR = (
         389, 26, 345, 85, 303, 129, 230, 188, 220, 194,
@@ -702,7 +646,6 @@ class GlassGauge(CanvasWidget):
         return max(1, self.bottom_y - self.fill_limit)
 
     def bake_frames(self) -> list:
-        """One masked PhotoImage per pixel of liquid height"""
         mid_y = self.bottom_y - int((self.bottom_y - self.top_y) * self.TOP_SHARE)
         frames = []
         for step in range(self.steps + 1):
@@ -750,9 +693,6 @@ class GlassGauge(CanvasWidget):
         self.canvas.coords(self.caption, x + self.width / 2, y + self.height + 6)
 
 class Worker:
-    """
-    Runs one job off the Tk thread and drains its messages on the Tk thread
-    """
 
     POLL_MS = 60
 
@@ -762,6 +702,7 @@ class Worker:
         self.thread: threading.Thread | None = None
         self.handlers: dict = {}
         self.polling = False
+        self.token = 0
 
     @property
     def busy(self) -> bool:
@@ -771,18 +712,20 @@ class Worker:
         if self.busy:
             return False
         self.handlers = handlers
+        self.token += 1
+        token = self.token
 
         def report(kind, payload):
-            self.queue.put((kind, payload))
+            self.queue.put((token, kind, payload))
 
         def run():
             try:
                 result = job(report)
             except Exception as exc:
                 log.exception("Background job %s failed", name)
-                self.queue.put(("error", exc))
+                self.queue.put((token, "error", exc))
             else:
-                self.queue.put(("done", result))
+                self.queue.put((token, "done", result))
 
         self.thread = threading.Thread(target=run, name=name, daemon=True)
         self.thread.start()
@@ -794,7 +737,9 @@ class Worker:
     def drain(self):
         try:
             while True:
-                kind, payload = self.queue.get_nowait()
+                token, kind, payload = self.queue.get_nowait()
+                if token != self.token:
+                    continue
                 handler = self.handlers.get(kind)
                 if handler:
                     handler(payload)

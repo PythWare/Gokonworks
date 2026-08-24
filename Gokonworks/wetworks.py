@@ -2,9 +2,7 @@
 Handles the utility code, anything that gets mass reused that isn't GUI code
 is coded in here as reusable code that gets imported into other scripts
 """
-
 from __future__ import annotations
-
 import ctypes, hashlib, json, logging, os, struct
 from ctypes import wintypes
 from datetime import datetime, timezone
@@ -18,6 +16,8 @@ PNG_DIR = PACKAGE_ROOT / "pngs"
 VOLUME_FILENAME = "volume.dat"
 UNPACK_FOLDER = "Unpacked_Files"
 MODS_FOLDER = "Mods"
+BACKUPS_FOLDER = "Backups"
+EXE_BACKUP_SUFFIX = ".orig"
 
 LOG_PATH = PROJECT_ROOT / "gokonworks.log"
 
@@ -57,7 +57,6 @@ log = build_logger()
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
-
 def human_size(size: int) -> str:
     value = float(size)
     for unit in ("B", "KB", "MB", "GB", "TB"):
@@ -70,25 +69,56 @@ def align_up(value: int, alignment: int = SECTOR) -> int:
     remainder = value % alignment
     return value if remainder == 0 else value + (alignment - remainder)
 
-
 def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
-
 
 def default_volume_path() -> Path:
     return PROJECT_ROOT / VOLUME_FILENAME
 
-
 def default_output_dir() -> Path:
     return PROJECT_ROOT / UNPACK_FOLDER
-
 
 def default_mods_dir() -> Path:
     return PROJECT_ROOT / MODS_FOLDER
 
+def default_backups_dir() -> Path:
+    return PROJECT_ROOT / BACKUPS_FOLDER
+
+def exe_backup_path(exe_path: Path) -> Path:
+    return default_backups_dir() / (Path(exe_path).name + EXE_BACKUP_SUFFIX)
+
+
+def ensure_folders(exe_path: Path | None = None) -> dict[str, Path]:
+    made = {}
+    mods_parent = Path(exe_path).parent if exe_path and Path(exe_path).name else PROJECT_ROOT
+    for key, folder in (("backups", default_backups_dir()), ("mods", mods_parent / MODS_FOLDER)):
+        try:
+            if not folder.is_dir():
+                folder.mkdir(parents=True, exist_ok=True)
+                log.info("Created %s", folder)
+                made[key] = folder
+        except OSError as exc:
+            log.warning("Couldn't create %s: %s", folder, exc)
+    return made
+
+
+def relocate_stray_backup(volume_path: Path) -> Path | None:
+    volume_path = Path(volume_path)
+    stray = volume_path.with_name(volume_path.name + BACKUP_SUFFIX)
+    target = backup_path(volume_path)
+    if stray == target or not stray.is_file() or target.is_file():
+        return None
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        stray.replace(target)
+    except OSError as exc:
+        log.warning("Couldn't move %s into %s: %s", stray.name, target.parent, exc)
+        return None
+    log.info("Moved %s into %s", stray.name, target.parent)
+    return target
+
 
 def decode_name(raw: bytes) -> str:
-    """Entry names are ASCII in retail volume.dat, cp932 is the safe fallback"""
     stripped = raw.split(b"\x00", 1)[0]
     try:
         return stripped.decode("ascii")
@@ -97,7 +127,6 @@ def decode_name(raw: bytes) -> str:
 
 
 def normalize_archive_path(name: str) -> str:
-    """Turn a stored lang_us\\ui\\x.bin name into a safe relative posix path"""
     raw = name.replace("\\", "/")
     parts: list[str] = []
     for part in raw.split("/"):
@@ -113,7 +142,6 @@ def normalize_archive_path(name: str) -> str:
 
 
 def to_archive_name(path: str) -> str:
-    """Inverse of normalize_archive_path, the on-disk name uses backslashes"""
     return path.replace("/", "\\")
 
 
@@ -122,9 +150,6 @@ NAME_HASH_MAX_CHARS = 199
 
 
 def hash_name(name: str) -> int:
-    """
-    The TOC hash the game looks entries up by
-    """
     value = 0
     for char in to_archive_name(name).upper()[:NAME_HASH_MAX_CHARS]:
         code = ord(char)
@@ -146,7 +171,6 @@ def read_exact(file_obj, size: int, label: str = "volume") -> bytes:
 
 
 def write_json(path: Path, data: dict):
-    """Write JSON through a temp file so a crash can't shred an existing ledger"""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     temp_path = path.with_name(path.name + ".tmp")
@@ -160,18 +184,13 @@ def read_json(path: Path, label: str = "file") -> dict:
     except (OSError, json.JSONDecodeError) as exc:
         raise GokonworksError(f"Could not read {label}: {path}") from exc
 
-
 SOUND_ASYNC = 0x0001
 SOUND_NODEFAULT = 0x0002
 SOUND_MEMORY = 0x0004
 SOUND_LOOP = 0x0008
 SOUND_PURGE = 0x0040
 
-
 class WinMemoryAudioPlayer:
-    """
-    Loops a WAV straight out of a bytes object
-    """
 
     def __init__(self):
         self.buffer = None
@@ -208,9 +227,6 @@ class WinMemoryAudioPlayer:
 
 
 def block_extents(taildata: dict) -> dict[str, int]:
-    """
-    How much room each file's block actually has
-    """
     files = taildata["files"]
     ordered = sorted(
         (int(record["stored_offset"]), path, record) for path, record in files.items()
@@ -227,9 +243,8 @@ def block_extents(taildata: dict) -> dict[str, int]:
 
 
 def backup_path(volume_path: Path) -> Path:
-    """The one file the toolkit needs to undo anything"""
     volume_path = Path(volume_path)
-    return volume_path.with_name(volume_path.name + BACKUP_SUFFIX)
+    return default_backups_dir() / (volume_path.name + BACKUP_SUFFIX)
 
 
 def legacy_backup_paths(volume_path: Path) -> tuple[Path, Path]:
@@ -241,15 +256,11 @@ def legacy_backup_paths(volume_path: Path) -> tuple[Path, Path]:
 
 
 def peek_header(volume_path: Path) -> tuple[int, int, int, int, int]:
-    """Read the five big endian header longs without pulling in the ledger module"""
     with Path(volume_path).open("rb") as file_obj:
         return struct.unpack(">5I", read_exact(file_obj, 20, "volume header"))
 
 
 def pristine_size(volume_path: Path) -> int:
-    """
-    Size volume.dat should be when untouched
-    """
     with Path(volume_path).open("rb") as file_obj:
         magic, files, names, base, fsize = struct.unpack(
             ">5I", read_exact(file_obj, 20, "volume header")
@@ -280,11 +291,9 @@ def copy_stream(source, target, total: int, label: str, progress: ProgressCallba
 
 
 def make_backup(volume_path: Path, progress: ProgressCallback | None = None) -> dict:
-    """
-    Copy the whole clean archive once
-    """
     volume_path = Path(volume_path)
     target = backup_path(volume_path)
+    target.parent.mkdir(parents=True, exist_ok=True)
     total = volume_path.stat().st_size
     partial = target.with_name(target.name + ".part")
 
@@ -304,9 +313,7 @@ def make_backup(volume_path: Path, progress: ProgressCallback | None = None) -> 
 def backup_available(volume_path: Path) -> bool:
     return backup_path(volume_path).is_file()
 
-
 def backup_original_size(volume_path: Path) -> int:
-    """Vanilla size, straight off the backup rather than out of a side file"""
     target = backup_path(volume_path)
     if not target.is_file():
         raise GokonworksError("No archive backup exists, can't tell the vanilla size")
@@ -314,7 +321,6 @@ def backup_original_size(volume_path: Path) -> int:
 
 
 def backup_toc_blob(volume_path: Path) -> bytes:
-    """Header plus the whole table of contents, walked out of the backup"""
     target = backup_path(volume_path)
     if not target.is_file():
         raise GokonworksError("No archive backup exists, can't read the vanilla index")
@@ -325,9 +331,6 @@ def backup_toc_blob(volume_path: Path) -> bytes:
 
 
 def restore_toc_from_backup(volume_path: Path) -> dict:
-    """
-    Put the vanilla index back and cut off every appended byte
-    """
     volume_path = Path(volume_path)
     blob = backup_toc_blob(volume_path)
     original_size = backup_original_size(volume_path)
@@ -359,9 +362,7 @@ def restore_regions_from_backup(
     regions: list[tuple[int, int]],
     progress: ProgressCallback | None = None,
 ) -> int:
-    """
-    Copy specific byte ranges back out of the backup
-    """
+
     volume_path = Path(volume_path)
     source_path = backup_path(volume_path)
     if not source_path.is_file():
@@ -401,9 +402,7 @@ def restore_regions_from_backup(
     log.info("Restored %d region(s), %s, from the backup", len(ordered), human_size(written))
     return written
 
-
 def restore_from_backup(volume_path: Path, progress: ProgressCallback | None = None) -> dict:
-    """Put the whole archive back, byte for byte"""
     volume_path = Path(volume_path)
     source_path = backup_path(volume_path)
     if not source_path.is_file():
@@ -428,9 +427,6 @@ def restore_from_backup(volume_path: Path, progress: ProgressCallback | None = N
 
 
 def migrate_legacy_backup(volume_path: Path) -> bool:
-    """
-    Fold an old index only backup into the new shape
-    """
     volume_path = Path(volume_path)
     toc_file, fingerprint_file = legacy_backup_paths(volume_path)
     if not (toc_file.is_file() and fingerprint_file.is_file()):
@@ -462,17 +458,12 @@ def migrate_legacy_backup(volume_path: Path) -> bool:
     log.info("Migrated the legacy index backup, archive is back to %s", human_size(original_size))
     return True
 
-
 def needs_full_backup(volume_path: Path | None = None) -> bool:
-    """Whether the one time archive copy still has to be taken"""
     volume_path = Path(volume_path) if volume_path else default_volume_path()
     return volume_path.is_file() and not backup_path(volume_path).is_file()
 
 
 def ensure_backups(volume_path: Path | None = None) -> tuple[bool, str, str]:
-    """
-    Called once at startup
-    """
     volume_path = Path(volume_path) if volume_path else default_volume_path()
 
     if not volume_path.is_file():
@@ -500,6 +491,7 @@ def ensure_backups(volume_path: Path | None = None) -> tuple[bool, str, str]:
         log.error("Bad magic 0x%08X in %s", magic, volume_path)
         return False, "error", message
 
+    relocate_stray_backup(volume_path)
     target = backup_path(volume_path)
 
     if target.is_file():
@@ -510,7 +502,7 @@ def ensure_backups(volume_path: Path | None = None) -> tuple[bool, str, str]:
                 f"{volume_path.name} is smaller than the backup "
                 f"({human_size(actual)} vs {human_size(original_size)}).\n\n"
                 "The archive was replaced or truncated. Restore it from "
-                f"{target.name}, or delete the backup and start again from a clean archive."
+                f"{target.name} or delete the backup and start again from a vanilla archive."
             )
             log.warning("Volume shrank below the backup size")
             return False, "warning", message
@@ -525,7 +517,7 @@ def ensure_backups(volume_path: Path | None = None) -> tuple[bool, str, str]:
             message = (
                 f"{volume_path.name} is {human_size(actual)} but a vanilla archive of this "
                 f"index should be {human_size(expected)}.\n\n"
-                "It looks like this archive was already modified and there is no backup to "
+                "It looks like this archive was already modified and theress no backup to "
                 "compare against. Restore a clean copy before enabling any mods."
             )
             log.warning("Volume size %d != pristine %d and no backup exists", actual, expected)

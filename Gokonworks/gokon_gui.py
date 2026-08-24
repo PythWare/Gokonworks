@@ -1,7 +1,6 @@
 """Handles the GUI code"""
 
 from __future__ import annotations
-
 import subprocess
 import tkinter as tk
 from pathlib import Path
@@ -9,11 +8,11 @@ from tkinter import filedialog, messagebox
 
 from .ledger import (
     TAILDATA_FILENAME,
-    load_taildata,
     open_volume,
     unpack_status,
     unpack_volume,
 )
+from .patcher import EXE_FILENAME, PatchError, apply_patches, read_state
 from .refresh import (
     PIL_AVAILABLE,
     PIL_MESSAGE,
@@ -23,39 +22,55 @@ from .refresh import (
     ProgressBar,
     StatusLog,
     Worker,
+    bring_forward,
     load_settings,
+    own_window,
     pick_theme,
     save_settings,
 )
-from .returns import MODS_FILENAME, restore_vanilla
 from .wetworks import (
+    MODS_FOLDER,
     PROJECT_ROOT,
-    GokonworksError,
     backup_path,
+    default_backups_dir,
     default_mods_dir,
     default_output_dir,
     default_volume_path,
+    ensure_folders,
     human_size,
     log,
     make_backup,
     needs_full_backup,
+    relocate_stray_backup,
+    restore_from_backup,
 )
 
 WINDOW_WIDTH = 1120
 WINDOW_HEIGHT = 720
 MIN_WIDTH = 880
-MIN_HEIGHT = 560
+MIN_HEIGHT = 880
 
 TOP_HEIGHT = 74
 SIDE_WIDTH = 250
 PAD = 16
-BUTTON_HEIGHT = 38
-BUTTON_GAP = 10
+BUTTON_HEIGHT = 34
+BUTTON_GAP = 8
 GAUGE_HEIGHT = 104
+
+PATCH_WIDTH = 620
+PATCH_HEIGHT = 470
+
+INTRO_CYCLE = ("vanilla", "keep_op", "skip_all")
+INTRO_LABELS = {
+    "vanilla": "Intro: Everything",
+    "keep_op": "Intro: Skip logos, keep OP",
+    "skip_all": "Intro: Skip logos and intro",
+    "custom": "Intro: Unrecognised value",
+}
 
 
 class CoreTools:
-    """The Gokonworks hub"""
+    """Gokonworks hub"""
 
     def __init__(self, root: tk.Tk):
         self.root = root
@@ -67,7 +82,8 @@ class CoreTools:
 
         self.volume_path = Path(self.settings.get("volume_path") or default_volume_path())
         self.output_dir = Path(self.settings.get("output_dir") or default_output_dir())
-        self.mod_window = None
+        self.exe_path = Path(self.settings.get("exe_path") or "")
+        self.patch_window = None
         self.size = (0, 0)
         self.resize_job = None
 
@@ -107,8 +123,10 @@ class CoreTools:
         self.buttons = {
             "unpack": Button(self.canvas, theme, 0, 0, 10, BUTTON_HEIGHT,
                              "Unpack Archive", self.start_unpack, tone="accent"),
-            "mods": Button(self.canvas, theme, 0, 0, 10, BUTTON_HEIGHT,
-                           "Mod Manager", self.open_mod_manager),
+            "patch": Button(self.canvas, theme, 0, 0, 10, BUTTON_HEIGHT,
+                            "Patch EXE", self.open_patch_window),
+            "unpatch": Button(self.canvas, theme, 0, 0, 10, BUTTON_HEIGHT,
+                              "Revert EXE", self.revert_game_exe, tone="danger"),
             "verify": Button(self.canvas, theme, 0, 0, 10, BUTTON_HEIGHT,
                              "Verify Archive", self.start_verify),
             "reveal": Button(self.canvas, theme, 0, 0, 10, BUTTON_HEIGHT,
@@ -120,7 +138,10 @@ class CoreTools:
             "restore": Button(self.canvas, theme, 0, 0, 10, BUTTON_HEIGHT,
                               "Restore Vanilla", self.restore_vanilla, tone="danger"),
         }
-        self.button_order = ["unpack", "mods", "verify", "reveal", "archive", "output", "restore"]
+        self.button_order = [
+            "unpack", "patch", "unpatch", "verify", "reveal",
+            "archive", "output", "restore",
+        ]
 
         self.paths_item = self.canvas.create_text(
             0, 0, text="", anchor="nw", fill=theme.text_muted, font=("Segoe UI", 8), width=10,
@@ -136,9 +157,7 @@ class CoreTools:
         self.refresh_paths()
 
     def layout(self, width: int, height: int):
-        """Position everything, only ever called when the canvas size changed"""
         self.canvas.coords(self.rule_item, 0, TOP_HEIGHT, width, TOP_HEIGHT)
-
         side_x = PAD
         side_y = TOP_HEIGHT + PAD
         side_h = height - side_y - PAD
@@ -181,10 +200,15 @@ class CoreTools:
         self.resize_job = self.root.after(40, lambda: self.layout(*self.size))
 
     def refresh_paths(self):
+        chosen = bool(self.exe_path.name)
+        exe = self.exe_path if chosen else "not chosen yet"
+        loose = self.exe_path.parent / MODS_FOLDER if chosen else default_mods_dir()
         text = (
             f"Archive:\n{self.volume_path}\n\n"
             f"Unpack to:\n{self.output_dir}\n\n"
-            f"Mods:\n{default_mods_dir()}"
+            f"Game exe:\n{exe}\n\n"
+            f"Loose files:\n{loose}\n\n"
+            f"Backups:\n{default_backups_dir()}"
         )
         self.canvas.itemconfigure(self.paths_item, text=text)
 
@@ -203,8 +227,16 @@ class CoreTools:
     def taildata_path(self) -> Path:
         return self.output_dir / TAILDATA_FILENAME
 
+    def prepare_folders(self):
+        for key, folder in ensure_folders(self.exe_path).items():
+            self.say(f"Made the {key} folder: {folder}")
+        moved = relocate_stray_backup(self.volume_path)
+        if moved:
+            self.say(f"Moved the existing archive backup into {moved.parent}", "ok")
+
     def report_startup(self):
         self.say(f"Gokonworks ready. Fuji is serving {self.theme.name}.", "accent")
+        self.prepare_folders()
         if self.volume_path.is_file():
             size = self.volume_path.stat().st_size
             self.say(f"Archive: {self.volume_path.name}, {human_size(size)}")
@@ -217,9 +249,6 @@ class CoreTools:
             self.check_unpack()
 
     def start_backup(self):
-        """
-        Take the one archive copy the toolkit undoes everything from
-        """
         if self.worker.busy:
             return
         volume_path = self.volume_path
@@ -253,7 +282,7 @@ class CoreTools:
         self.set_progress(1.0, "Backup ready")
         self.say(
             f"Backup ready: {Path(result['backup']).name}, {human_size(result['original_size'])}. "
-            "Keep it, it is the only way any mod gets undone.",
+            "Keep it, it's the only way any mod gets undone.",
             "ok",
         )
         self.check_unpack()
@@ -419,31 +448,86 @@ class CoreTools:
         else:
             self.say("Every entry checks out, hashes included.", "ok")
         if not summary["hash_sorted"]:
-            self.say("TOC is not sorted by hash, the game can't look files up.", "danger")
+            self.say("TOC isnt sorted by hash, the game can't look files up.", "danger")
 
-    def open_mod_manager(self):
-        if self.mod_window is not None and self.mod_window.winfo_exists():
-            self.mod_window.lift()
-            self.mod_window.focus_force()
+    def choose_exe(self) -> Path | None:
+        start = self.exe_path.parent if self.exe_path.name else self.volume_path.parent
+        chosen = filedialog.askopenfilename(
+            title=f"Select the game's {EXE_FILENAME}",
+            initialdir=str(start),
+            filetypes=[("Akiba's Trip executable", EXE_FILENAME), ("Executables", "*.exe")],
+            parent=self.root,
+        )
+        if not chosen:
+            return None
+        self.exe_path = Path(chosen)
+        self.settings["exe_path"] = str(self.exe_path)
+        save_settings(self.project_root, self.settings)
+        for key, folder in ensure_folders(self.exe_path).items():
+            self.say(f"Made the {key} folder: {folder}")
+        self.refresh_paths()
+        return self.exe_path
+
+    def open_patch_window(self):
+        if self.patch_window is not None and self.patch_window.winfo_exists():
+            bring_forward(self.patch_window)
             return
-        taildata_path = self.taildata_path()
-        if not taildata_path.is_file():
-            messagebox.showinfo(
-                "Mod Manager",
-                "No taildata yet.\n\nUnpack the archive first so the mod manager knows "
-                "where every file lives.", parent=self.root
-            )
+        exe_path = self.choose_exe()
+        if exe_path is None:
             return
         try:
-            taildata = load_taildata(taildata_path)
-        except GokonworksError as exc:
-            messagebox.showerror("Mod Manager", str(exc), parent=self.root)
+            state = read_state(exe_path)
+        except (PatchError, OSError) as exc:
+            self.say(f"Can't read that exe: {exc}", "danger")
+            messagebox.showerror("Patch EXE", str(exc), parent=self.root)
             return
 
-        from .bar import ModManagerWindow
+        build = state["build"] or "an unrecognised build"
+        self.say(f"Opened the patch bench on {exe_path.name} ({build}).", "accent")
+        self.patch_window = PatchWindow(self.root, self.theme, exe_path, state, self.say)
 
-        self.mod_window = ModManagerWindow(self.root, self.theme, self.volume_path, taildata)
-        self.say("Opened the mod shelf.", "accent")
+    def revert_game_exe(self):
+        exe_path = self.choose_exe()
+        if exe_path is None:
+            return
+        try:
+            state = read_state(exe_path)
+        except (PatchError, OSError) as exc:
+            self.say(f"Can't read that exe: {exc}", "danger")
+            messagebox.showerror("Revert EXE", str(exc), parent=self.root)
+            return
+
+        active = describe_active(state)
+        if not active:
+            self.say(f"{exe_path.name} has no patches to undo.", "ok")
+            messagebox.showinfo(
+                "Revert EXE", f"{exe_path.name} is already vanilla.", parent=self.root
+            )
+            return
+        if not messagebox.askyesno(
+            "Revert EXE",
+            f"{exe_path.name} currently has:\n\n  " + "\n  ".join(active) +
+            "\n\nPut all of it back to vanilla?",
+            parent=self.root,
+        ):
+            return
+
+        try:
+            result = apply_patches(
+                exe_path, loose=False, intro="vanilla", clothing=False, backup=False
+            )
+        except (PatchError, OSError) as exc:
+            self.say(f"Revert failed: {exc}", "danger")
+            messagebox.showerror("Revert EXE", str(exc), parent=self.root)
+            return
+
+        if self.patch_window is not None and self.patch_window.winfo_exists():
+            self.patch_window.adopt(result)
+        self.say(f"Reverted every patch in {exe_path.name}.", "ok")
+        if result["build"]:
+            self.say(f"It's vanilla {result['build']} exe again.")
+        else:
+            self.say("Patched bytes are back, though the exe still differs from vanilla.")
 
     def open_output_folder(self):
         target = self.output_dir if self.output_dir.is_dir() else self.project_root
@@ -486,15 +570,14 @@ class CoreTools:
         if not target.is_file():
             messagebox.showerror(
                 "Restore Vanilla",
-                f"There is no backup at {target.name}, so there is nothing to restore from.",
+                f"Theres no backup at {target.name}, so there's nothing to restore from.",
                 parent=self.root,
             )
             return
         if not messagebox.askyesno(
             "Restore Vanilla",
             f"Copy {target.name} back over {self.volume_path.name}?\n\n"
-            "This puts the whole archive back byte for byte and undoes every mod, "
-            "including any the ledger has lost track of.", parent=self.root
+            "This turns the archive back to vanilla.", parent=self.root
         ):
             return
 
@@ -504,7 +587,7 @@ class CoreTools:
         self.set_progress(0.0, "Restoring")
 
         def job(report):
-            return restore_vanilla(
+            return restore_from_backup(
                 volume_path,
                 progress=lambda done, total, message: report("progress", (done, total, message)),
             )
@@ -525,5 +608,154 @@ class CoreTools:
         self.say(
             f"Restored {self.volume_path.name} to {human_size(result['restored_size'])}", "ok"
         )
-        self.say(f"Mod ledger cleared ({MODS_FILENAME})")
         log.info("Vanilla restore run from the hub")
+
+
+def describe_active(state: dict) -> list[str]:
+    active = []
+    loose = state["loose"]
+    if loose["status"] != "off":
+        root = loose["root"] or "?"
+        active.append(f"loose file loading from {root}")
+    if state["intro"]["status"] != "vanilla":
+        active.append(INTRO_LABELS.get(state["intro"]["status"], "an intro change").lower())
+    if state["clothing"]["status"] != "off":
+        active.append("the clothing limit raise")
+    return active
+
+
+class PatchWindow(tk.Toplevel):
+
+    def __init__(self, master, theme, exe_path: Path, state: dict, echo):
+        super().__init__(master)
+        self.theme = theme
+        self.exe_path = Path(exe_path)
+        self.state = state
+        self.echo = echo
+
+        self.title(f"EXE Patches, {self.exe_path.name}")
+        self.geometry(f"{PATCH_WIDTH}x{PATCH_HEIGHT}")
+        self.resizable(False, False)
+        self.configure(bg=theme.bg)
+        own_window(self, master)
+
+        self.canvas = tk.Canvas(self, bg=theme.bg, highlightthickness=0)
+        self.canvas.pack(fill="both", expand=True)
+
+        inner = PATCH_WIDTH - PAD * 4
+        self.panel = Panel(self.canvas, theme, PAD, PAD, PATCH_WIDTH - PAD * 2, 232,
+                           title="Executable Patches")
+        self.header = self.canvas.create_text(
+            PAD * 2, PAD + 40, text="", anchor="nw", fill=theme.text_muted,
+            font=("Segoe UI", 8), width=inner,
+        )
+
+        row = PAD + 84
+        self.buttons = {
+            "loose": Button(self.canvas, theme, PAD * 2, row, inner, BUTTON_HEIGHT,
+                            "", self.toggle_loose, tone="accent"),
+            "intro": Button(self.canvas, theme, PAD * 2, row + 44, inner, BUTTON_HEIGHT,
+                            "", self.cycle_intro),
+            "clothing": Button(self.canvas, theme, PAD * 2, row + 88, inner, BUTTON_HEIGHT,
+                               "", self.toggle_clothing),
+        }
+        self.hint = self.canvas.create_text(
+            PAD * 2, row + 130, text="Click a row to change it. Every click writes to the exe.",
+            anchor="nw", fill=theme.text_muted, font=("Segoe UI", 8), width=inner,
+        )
+
+        self.log = StatusLog(self.canvas, theme, PAD, 264, PATCH_WIDTH - PAD * 2,
+                             PATCH_HEIGHT - 264 - PAD - 44)
+        Button(self.canvas, theme, PATCH_WIDTH - PAD - 120, PATCH_HEIGHT - PAD - 34,
+               120, BUTTON_HEIGHT, "Close", self.destroy)
+
+        self.refresh()
+        self.say(f"Reading {self.exe_path}")
+        self.report_loose()
+
+    def say(self, message: str, tone: str = "muted"):
+        self.log.write(message, tone)
+
+    def adopt(self, state: dict):
+        self.state = state
+        self.refresh()
+        self.say("The hub reverted the exe, rows refreshed.", "ok")
+
+    def refresh(self):
+        state = self.state
+        build = state["build"] or "unrecognised build, patched by signature"
+        self.canvas.itemconfigure(
+            self.header, text=f"{self.exe_path}\n{build}"
+        )
+
+        loose = state["loose"]
+        if loose["status"] == "on":
+            label = f"Loose Files: On, reading {loose['root']}"
+        elif loose["status"] == "off":
+            label = "Loose Files: Off, everything from volume.dat"
+        else:
+            label = "Loose Files: Half patched, click to fix"
+        self.buttons["loose"].set_text(label)
+        self.buttons["intro"].set_text(INTRO_LABELS.get(state["intro"]["status"], "Intro: ?"))
+
+        clothing = state["clothing"]["status"]
+        self.buttons["clothing"].set_text({
+            "on": "Clothing Limit: Raised",
+            "off": "Clothing Limit: Vanilla caps",
+        }.get(clothing, "Clothing Limit: Half patched, click to fix"))
+
+    def apply(self, **changes):
+        try:
+            result = apply_patches(self.exe_path, **changes)
+        except (PatchError, OSError) as exc:
+            self.say(f"{exc}", "danger")
+            messagebox.showerror("EXE Patches", str(exc), parent=self)
+            return None
+        self.state = result
+        self.refresh()
+        if result["backup"]:
+            self.say(f"Kept the original as {Path(result['backup']).name}")
+        elif not result["changed"]:
+            self.say("Nothing needed changing.")
+        self.echo(f"{self.exe_path.name}: " + (", ".join(describe_active(result)) or "vanilla"), "ok")
+        return result
+
+    def toggle_loose(self):
+        turning_on = self.state["loose"]["status"] != "on"
+        result = self.apply(loose=turning_on)
+        if result is None:
+            return
+        if turning_on:
+            self.say(f"Loose file loading on, root {result['loose']['root']}", "ok")
+            self.report_loose()
+        else:
+            self.say("Loose file loading off, everything comes from volume.dat again.", "ok")
+
+    def cycle_intro(self):
+        current = self.state["intro"]["status"]
+        nxt = INTRO_CYCLE[(INTRO_CYCLE.index(current) + 1) % len(INTRO_CYCLE)] \
+            if current in INTRO_CYCLE else "vanilla"
+        result = self.apply(intro=nxt)
+        if result is not None:
+            self.say(INTRO_LABELS[result["intro"]["status"]], "ok")
+
+    def toggle_clothing(self):
+        turning_on = self.state["clothing"]["status"] != "on"
+        result = self.apply(clothing=turning_on)
+        if result is None:
+            return
+        if turning_on:
+            self.say("Clothing loops now read their count from the game's own struct.", "ok")
+        else:
+            self.say("Clothing caps back to vanilla.", "ok")
+
+    def report_loose(self):
+        if self.state["loose"]["status"] != "on":
+            return
+        folder = self.state["loose_dir"]
+        self.say(f"Loose files go in {folder}", "accent")
+        if not self.state["loose_dir_exists"]:
+            self.say("That folder doesnt exist yet, make it beside the exe.", "danger")
+        self.say(f"Files keep their archive paths, an example is "
+                 f"{MODS_FOLDER}/lang_us/ui/texture/<name>.")
+        self.say("Anything not there is read from volume.dat, so leave the archive alone.")

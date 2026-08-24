@@ -3,7 +3,7 @@ from tkinter import messagebox
 from Gokonworks import CoreTools
 from Gokonworks.ledger import ensure_backups, log, LOG_PATH
 
-"""Main script the user will use to call other scripts"""
+"""Main script you will use to call other scripts"""
 
 def install_tk_exception_hook(log, show_messagebox=True):
     def handler(self, exc, val, tb):
