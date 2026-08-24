@@ -1,3 +1,7 @@
+# Update
+
+Gokonworks is being updated for a new modding workflow. The game can read loose files. So, Gokonworks will soon stop using Mod Creator/Mod Manager infavor of exe patching to make the game load loose file mods.
+
 # Gokonworks Info
 
 Gokonworks is a modding toolkit for Akiba's Trip Undead & Undressed. The design of Gokonworks is inspired by my favorite anime, How I Attended An All-Guy's Mixer.
