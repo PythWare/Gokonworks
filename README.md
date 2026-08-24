@@ -26,7 +26,7 @@ Gokonworks will backup the volume.dat archive and executable.
 
 For modders that wish to mod the game, you must run the unpack and run the executable patches you wish to use with Patch EXE button. Whenever you mod the unpacked files and want to apply them to the game, you need to place them in the Mods folder. It's an easy process, just store the modded files in a folder hierarchy that matches the unpacked files (i.e., suppose you modded maplist.bin, the folder hierarchy for the mod would be Mods\lang_common\map\maplist.bin).
 
-For gamers who only download/apply mods, you only need to click Pacth EXE button and select the options desired and then place the downloaded mods in the Mods folder.
+For gamers who only download/apply mods, you only need to click Patch EXE button and select the options desired. Then place the downloaded mods in the Mods folder.
 
 The game will read the files in the Mods folder after its been patched by Gokonworks.
 
