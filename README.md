@@ -1,6 +1,6 @@
 # Update
 
-Gokonworks is updated with support for executable patching and loose file mod support.
+Gokonworks is updated with support for executable patching and loose file mod support. If you're using mods from older versions of Gokonworks (1.2 or older), switch to using loose file versions instead. Gokonworks 2.0 no longer uses Mod Creator and Mod Manager now that the game can be patched to read loose file mods.
 
 # Gokonworks Info
 
@@ -28,7 +28,7 @@ For modders that wish to mod the game, you must run the unpack and run the execu
 
 For gamers who only download/apply mods, you only need to click Patch EXE button and select the options desired. Then place the downloaded mods in the Mods folder.
 
-The game will read the files in the Mods folder after its been patched by Gokonworks.
+The game will read the files in the Mods folder after its been patched by Gokonworks. I suggest only keeping modded and needed files in the Mods folder, the game will read from volume.dat for any files missing in Mods folder.
 
 To disable mods, just delete the mods from the Mods folder.
 
@@ -57,3 +57,7 @@ Gokonworks includes 2 PNG images in the pngs folder (bottle.png and glass.png), 
 # Therion info
 
 The Therion_Guide folder holds a txt I wrote for the Therion executable found in volume.dat when unpacked, if you intend to make script mods that mod cutscenes, dialogue flow, altering what triggers a battle, adding new scenes, etc then I suggest reading the text file. The quick rundown is Therion compiles scripts for the game to read, for more details read the text file.
+
+# Credit
+
+Credit goes to GoofyMaster for locating the logos/intro loading and clothing limit offsets/values for me to use in Gokonworks. I only take credit for writing Gokonworks and finding out how the game loads loose files.
