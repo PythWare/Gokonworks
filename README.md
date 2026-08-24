@@ -22,12 +22,6 @@ Gokonworks patches the executable to allow loose file accessing, meaning loose f
 
 Gokonworks will backup the volume.dat archive and executable.
 
-# GUI samples
-
-The theme of Gokonworks is as explained above, inspired by my favorite anime but also the concept of Gokon.
-
-When unpacking volume.dat, the Mocktail glass will gradually fill as a visual indicator of the progress
-
 # Modding Workflow
 
 For modders that wish to mod the game, you must run the unpack and run the executable patches you wish to use with Patch EXE button. Whenever you mod the unpacked files and want to apply them to the game, you need to place them in the Mods folder. It's an easy process, just store the modded files in a folder hierarchy that matches the unpacked files (i.e., suppose you modded maplist.bin, the folder hierarchy for the mod would be Mods\lang_common\map\maplist.bin).
@@ -39,6 +33,10 @@ The game will read the files in the Mods folder after its been patched by Gokonw
 To disable mods, just delete the mods from the Mods folder.
 
 # Hub Examples
+
+The theme of Gokonworks is as explained above, inspired by my favorite anime but also the concept of Gokon.
+
+When unpacking volume.dat, the Mocktail glass will gradually fill as a visual indicator of the progress
 
 <img width="1120" height="910" alt="ngokon1" src="https://github.com/user-attachments/assets/b50ac01e-9008-4d90-979a-e5e2cb2af39c" />
 
