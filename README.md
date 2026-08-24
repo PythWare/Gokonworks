@@ -8,6 +8,8 @@ Gokonworks is a modding toolkit for Akiba's Trip Undead & Undressed. The design 
 
 Scroll down to see GUI examples of the toolkit if you desire to, make sure to read the readme especially requirements section. Modders/Gamers should read Modding Workflow section
 
+Discord server where modders are at is https://discord.gg/bhx3XTuaJG
+
 # Requirements
 
 Python 3 and Pillow (installed in command prompt with `python -m pip install pillow`). Pillow is a Python imaging library
