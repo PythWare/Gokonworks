@@ -1,6 +1,6 @@
 # Update
 
-Gokonworks is being updated for a new modding workflow. The game can read loose files. So, Gokonworks will soon stop using Mod Creator/Mod Manager infavor of exe patching to make the game load loose file mods.
+Gokonworks is updated with support for executable patching and loose file mod support.
 
 # Gokonworks Info
 
